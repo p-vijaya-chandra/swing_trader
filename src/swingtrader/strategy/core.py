@@ -25,6 +25,7 @@ from typing import Dict, List, Optional
 from ..config import Config
 from ..features import Features
 from ..regime import RISK_OFF, RegimeState
+from ..rules import initial_stop
 from ..util import NA, is_na, zscores
 
 
@@ -172,18 +173,8 @@ class SwingStrategy:
         for rank, (score, sym, f, i) in enumerate(scored, start=1):
             atr = f.get("atr", i)
             close = f.series.close[i]
-            stop = close - self.init_stop_mult * atr
-            if self.use_structure_stop:
-                sl = f.get("structure_low", i)
-                if not is_na(sl):
-                    # Prefer the recent swing low, because that is where the
-                    # trade thesis is actually wrong - but clamp it into a sane
-                    # ATR band. Too tight and ordinary noise takes you out at a
-                    # loss on a trade that was right; too wide and the position
-                    # size becomes meaningless.
-                    lo = close - self.max_stop_mult * atr
-                    hi = close - self.min_stop_mult * atr
-                    stop = min(max(sl * 0.995, lo), hi)
+            # Shared with the live planner - see rules.initial_stop
+            stop = initial_stop(close, atr, f.get("structure_low", i), self.cfg)
             out.append(Candidate(sym, date, "", score, rank, close, atr, stop,
                                  f.sector, f.snapshot(i)))
         return out

@@ -27,6 +27,7 @@ from ..data.models import Series
 from ..features import Features
 from ..portfolio import Position, RiskManager, Trade
 from ..regime import RISK_OFF, RegimeModel, RegimeState
+from ..rules import close_exit_reason, ratchet, trail_stop_level
 from ..strategy import Candidate, SwingStrategy
 from ..util import NA, is_na
 
@@ -204,6 +205,7 @@ class BacktestEngine:
                 symbol=p.symbol, sector=p.sector, setup=p.setup,
                 entry_date=p.entry_date, exit_date=date,
                 entry_price=p.entry_price, exit_price=fill, qty=p.original_qty or p.qty,
+                initial_stop=p.initial_stop, risk_per_share=p.risk_per_share,
                 gross_pnl=gross, costs=total_costs, net_pnl=net,
                 r_multiple=r, bars_held=p.bars_held, exit_reason=reason,
                 mae_r=mae_r, mfe_r=mfe_r, regime_at_entry=p.regime_at_entry,
@@ -352,11 +354,8 @@ class BacktestEngine:
                                          (p.highest_high - p.entry_price) / p.risk_per_share)
                 atr = f.get("atr", i)
                 if not is_na(atr) and atr > 0:
-                    mult = self.trail_mult_off if regime.label == RISK_OFF else self.trail_mult
-                    trail = p.highest_high - mult * atr
-                    # A stop only ever ratchets up. Widening a stop to "give it
-                    # room" is how a 1R loss becomes a 4R loss.
-                    p.stop = max(p.stop, trail)
+                    p.stop = ratchet(p.stop, trail_stop_level(
+                        p.highest_high, atr, regime.label, self.cfg))
                 ema = f.get("ema_pull", i)
                 if not is_na(ema):
                     p.below_ema_closes = p.below_ema_closes + 1 if c_ < ema else 0
@@ -369,27 +368,17 @@ class BacktestEngine:
                 rank_cache[date] = ranks
 
             for sym, p in list(positions.items()):
-                reason = None
                 px = self._price(sym, date)
                 if is_na(px):
                     continue
                 r_now = p.r_multiple(px)
-
-                if self.max_hold > 0 and p.bars_held >= self.max_hold:
-                    reason = "max_hold"
-                elif (self.time_stop_bars > 0 and p.bars_held >= self.time_stop_bars
-                      and not is_na(r_now) and r_now < self.time_stop_min_r):
-                    # Dead money. The cost of holding it is the trade you cannot
-                    # take because the slot and the heat budget are occupied.
-                    reason = "time_stop"
-                elif (self.mom_exit_closes > 0
-                      and p.below_ema_closes >= self.mom_exit_closes
-                      and (not self.mom_exit_profit_only or px > p.entry_price)):
-                    reason = "momentum_lost"
-                elif (ranks is not None and self.rank_exit > 0
-                      and ranks.get(sym, 10 ** 6) > self.rank_exit
-                      and (not is_na(r_now) and r_now > 0)):
-                    reason = "rank_decay"
+                # Shared with the live planner - see rules.py. Dead money costs
+                # you the trade you cannot take, because the slot and the heat
+                # budget are already spent.
+                reason = close_exit_reason(
+                    self.cfg, p.bars_held, r_now, p.below_ema_closes,
+                    px > p.entry_price,
+                    ranks.get(sym, 10 ** 6) if ranks is not None else None)
 
                 if reason:
                     pending.append(PendingOrder(sym, "SELL", 0, reason, px))

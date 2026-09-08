@@ -72,6 +72,12 @@ class Trade:
     entry_price: float
     exit_price: float
     qty: int
+    # The stop as actually placed, re-anchored to the fill rather than to the
+    # signal close. Recorded so the live planner can replay the trail from the
+    # same starting point, and so the journal can attribute results by how much
+    # room the trade was given.
+    initial_stop: float
+    risk_per_share: float
     gross_pnl: float
     costs: float
     net_pnl: float
@@ -88,9 +94,12 @@ class Trade:
     def as_row(self) -> Dict[str, object]:
         d = {k: getattr(self, k) for k in (
             "symbol", "sector", "setup", "entry_date", "exit_date", "entry_price",
-            "exit_price", "qty", "gross_pnl", "costs", "net_pnl", "r_multiple",
-            "bars_held", "exit_reason", "mae_r", "mfe_r", "regime_at_entry",
-            "entry_rank", "entry_score")}
+            "exit_price", "qty", "initial_stop", "risk_per_share", "gross_pnl",
+            "costs", "net_pnl", "r_multiple", "bars_held", "exit_reason", "mae_r",
+            "mfe_r", "regime_at_entry", "entry_rank", "entry_score")}
+        # stop distance as a fraction of entry - comparable across names
+        if self.entry_price:
+            d["f_stop_pct"] = self.risk_per_share / self.entry_price
         for k, v in self.entry_snapshot.items():
             d[f"f_{k}"] = v
         return d

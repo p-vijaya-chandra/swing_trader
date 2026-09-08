@@ -88,6 +88,16 @@ class Journal:
             os.remove(self.path)
 
 
+# Absolute rupee levels are meaningless across symbols: "trades where the price
+# was above Rs 2,700 did better" is a statement about which stocks happened to be
+# expensive, not about a condition you can screen on. Bucketing them produces
+# confident-looking noise, so they are excluded from attribution entirely.
+LEVEL_FEATURES = {
+    "close", "ema_fast", "ema_slow", "ema_pull", "atr", "hh_52w",
+    "donchian_high", "structure_low", "vol_avg", "turnover_med",
+}
+
+
 # --------------------------------------------------------------- attribution
 def feature_attribution(trades: Sequence, features: Optional[Sequence[str]] = None,
                         n_buckets: int = 4, min_per_bucket: int = 8) -> Dict[str, Any]:
@@ -106,7 +116,9 @@ def feature_attribution(trades: Sequence, features: Optional[Sequence[str]] = No
 
     if features is None:
         features = sorted({k for r in rows for k in r
-                           if k.startswith("f_") and isinstance(r.get(k), (int, float))})
+                           if k.startswith("f_")
+                           and k[2:] not in LEVEL_FEATURES
+                           and isinstance(r.get(k), (int, float))})
 
     out: Dict[str, Any] = {}
     for feat in features:

@@ -77,8 +77,14 @@ def make_folds(dates: Sequence[str], train_years: float, test_months: int,
         test_end = _shift_months(test_start, test_months)
         if test_start >= last:
             break
-        folds.append(Fold(i, train_start, train_end, test_start,
-                          min(test_end, last)))
+        capped_end = min(test_end, last)
+        # Drop a runt final window. A 13-day fold annualises into a wild number
+        # and then drags the median around as if it were a real observation.
+        span_days = (_dt.date.fromisoformat(capped_end)
+                     - _dt.date.fromisoformat(test_start)).days
+        if span_days < 0.6 * test_months * 30:
+            break
+        folds.append(Fold(i, train_start, train_end, test_start, capped_end))
         i += 1
         train_start = _shift_months(train_start, test_months)
         if train_end >= last:
@@ -137,11 +143,15 @@ class WalkForwardResult:
 
     def summary(self) -> List[str]:
         out = [f"Folds evaluated   : {len(self.folds)}"]
-        oos = [m.get("cagr") for m in self.fold_metrics if not is_na(m.get("cagr"))]
-        if oos:
-            out.append(f"OOS fold CAGR     : median {100*median(oos):.1f}%  "
-                       f"best {100*max(oos):.1f}%  worst {100*min(oos):.1f}%")
-            out.append(f"Folds positive    : {sum(1 for x in oos if x > 0)}/{len(oos)}")
+        rets = [m.get("period_return") for m in self.fold_metrics
+                if not is_na(m.get("period_return"))]
+        if rets:
+            out.append(f"OOS window return : median {100*median(rets):+.1f}%  "
+                       f"best {100*max(rets):+.1f}%  worst {100*min(rets):+.1f}%")
+            out.append(f"Windows positive  : {sum(1 for x in rets if x > 0)}/{len(rets)}")
+            n_tr = [m.get("n_trades") or 0 for m in self.fold_metrics]
+            out.append(f"Trades per window : median {median([float(x) for x in n_tr]):.0f}  "
+                       f"total {sum(n_tr)}")
         return out
 
 
@@ -186,6 +196,11 @@ class WalkForward:
             m["fold"] = f.index
             m["test_start"], m["test_end"] = f.test_start, f.test_end
             res = m.pop("_result")
+            # Period return, not an annualised one. A six-month window scaled up
+            # to a yearly rate reads as +96% or -23% and invites you to take a
+            # single fold seriously; the raw window return does not.
+            m["period_return"] = m.get("total_return")
+            m["fold_costs"] = res.costs_total
             out.fold_metrics.append(m)
             out.oos_trades.extend(res.trades)
 
@@ -202,16 +217,16 @@ class WalkForward:
                     out.oos_returns.append((res.dates[i], r))
 
             if self.verbose:
-                cagr = m.get("cagr")
-                print(f"  {f.describe()}  OOS CAGR "
-                      f"{'n/a' if is_na(cagr) else format(100*cagr, '6.1f') + '%'}  "
+                pr = m.get("period_return")
+                print(f"  {f.describe()}  OOS return "
+                      f"{'n/a' if is_na(pr) else format(100*pr, '+6.1f') + '%'}  "
                       f"trades {m.get('n_trades')}")
 
         if stitched_equity:
             start_eq = float(self.cfg.get("capital", 100000.0))
+            oos_costs = sum(getattr(t, "costs", 0.0) or 0.0 for t in out.oos_trades)
             out.stitched_metrics = compute_metrics(
-                stitched_dates, [start_eq] + stitched_equity, out.oos_trades,
-                sum(0.0 for _ in out.oos_trades))
+                stitched_dates, [start_eq] + stitched_equity, out.oos_trades, oos_costs)
         return out
 
 

@@ -1,0 +1,186 @@
+// swingtrader configuration - Nifty 100 cash equity, Groww, Rs 1,00,000
+//
+// JSONC: // comments are stripped before parsing. Every key here overrides the
+// built-in default in src/swingtrader/config.py; anything you delete falls back
+// to that default, so it is safe to keep only the lines you actually changed.
+//
+// Any key can also be overridden per-run without editing this file:
+//     swing backtest --set risk.risk_per_trade=0.008 --set exit.trail_atr_mult=4.0
+{
+  "capital": 100000.0,
+
+  "universe": {
+    "file": "config/universe_nifty100.csv",
+    "min_price": 30.0,
+    // If one share already breaches the position cap, the name is untradeable at
+    // this account size. At Rs 1L this removes the very high-priced Nifty 100
+    // constituents, and pretending otherwise would make the backtest fiction.
+    "max_price_frac_of_equity": 0.22,
+    "min_turnover_cr": 25.0,        // 20-day median traded value, Rs crore
+    "min_history_bars": 260
+  },
+
+  // ---------------------------------------------------------------- REGIME
+  // The single most important block in this file. On a long-only cash book you
+  // cannot short and cannot hedge cheaply, so almost all of your catastrophic
+  // risk is "held a basket of high-beta large caps into a falling market".
+  // Stock selection cannot save you there; refusing to hold can.
+  "regime": {
+    "index_symbol": "NIFTY100",
+    "ma_long": 200,
+    "ma_short": 50,
+    "breadth_ma": 50,
+    "risk_on_breadth": 0.45,        // >=45% of the universe above its own 50 DMA
+    "risk_off_breadth": 0.30,
+    "chop_atr_pct_max": 0.030,
+    // Target gross exposure by regime. risk_off = 0.0 means: hold nothing new,
+    // let the tightened trailing stops take you to cash.
+    "exposure": { "risk_on": 1.0, "neutral": 0.55, "risk_off": 0.0 }
+  },
+
+  // ---------------------------------------------------------------- SCREEN
+  // A veto, not a preference. Binary: tradeable today, or not.
+  "screen": {
+    "ema_fast": 50,
+    "ema_slow": 200,
+    "require_stacked_ema": true,    // close > EMA50 > EMA200
+    "require_slope_ema_slow": true,
+    "atr_pct_min": 0.012,           // below this there is no move to catch
+    "atr_pct_max": 0.070,           // above this the stop distance destroys the size
+    "max_pct_below_52w_high": 0.25,
+    "min_adx": 18.0,
+    "rs_lookback": 63,
+    "min_rs": 0.0                   // must not be lagging the index
+  },
+
+  // ------------------------------------------------------------------ RANK
+  // A preference among names that passed. Dominated by the annualised
+  // regression slope x R-squared momentum measure: it rewards a steady climb
+  // and discounts a name that gapped once and then went sideways.
+  "rank": {
+    "mom_lookback": 90,
+    "weights": {
+      "mom_slope_r2": 0.55,
+      "roc_126": 0.20,
+      "rs_index": 0.15,
+      "atr_pct": -0.10             // negative weight = penalty
+    },
+    "top_n": 25
+  },
+
+  // ----------------------------------------------------------------- ENTRY
+  // Timing. A high-ranked name is not a buy until price does something today;
+  // without a trigger you buy extended names at arbitrary points and your stop
+  // distance means nothing.
+  "entry": {
+    "setups": ["breakout", "pullback"],
+    "breakout_lookback": 20,
+    "breakout_vol_mult": 1.2,
+    "pullback_rsi_len": 3,
+    "pullback_rsi_max": 35.0,
+    "pullback_ema": 20,
+    "pullback_max_dist_atr": 1.0,
+    "max_gap_pct": 0.030,           // skip if it opens more than 3% above the signal close
+    "max_new_per_day": 3,
+    "min_score_z": 0.0
+  },
+
+  // ------------------------------------------------------------------ EXIT
+  // Deliberately SLOW. At Rs 1L one R is about Rs 1,200 while a round trip costs
+  // Rs 70-140, so every avoidable exit burns 6-12% of an R. Turnover, not stock
+  // picking, is the binding constraint on a small account - and holding while
+  // momentum persists is the whole point. Run `swing costs` to see the numbers.
+  "exit": {
+    "init_stop_atr_mult": 2.5,
+    "min_stop_atr_mult": 1.5,       // tighter than this and noise stops you out
+    "max_stop_atr_mult": 3.5,
+    "use_structure_stop": true,
+    "structure_lookback": 10,
+    "trail_atr_mult": 3.0,          // chandelier from the highest high since entry
+    "trail_atr_mult_riskoff": 1.5,  // tighten when the index rolls over
+    "time_stop_bars": 25,           // five weeks to prove itself ...
+    "time_stop_min_r": 0.0,         // ... and only cut it if still underwater
+    "momentum_exit_ema": 20,
+    "momentum_exit_closes": 0,      // 0 = off. The trail does the work instead.
+    "momentum_exit_only_if_profit": true,
+    "rank_exit_threshold": 0,       // 0 = off. Set ~60 to rotate on rank decay.
+    "scale_out_at_r": 0.0,          // e.g. 2.0 sells half at +2R
+    "scale_out_frac": 0.5,
+    "max_hold_bars": 0              // 0 = let winners run indefinitely
+  },
+
+  // ------------------------------------------------------------------ RISK
+  "risk": {
+    "risk_per_trade": 0.012,        // 1.2% of equity = Rs 1,200 at Rs 1L
+    "max_positions": 6,             // 6 x ~Rs 17k beats 10 x ~Rs 10k on costs
+    "max_position_frac": 0.25,
+    "max_portfolio_heat": 0.075,    // total rupees at risk across open positions
+    "max_sector_positions": 3,      // the universe is ~23% financials; cap it
+    "min_position_value": 8000.0,
+    "derisk_on_drawdown": 0.10,     // past -10%, halve the risk per trade
+    "derisk_factor": 0.5,
+    "halt_on_drawdown": 0.20,       // past -20%, stop opening positions
+    "resume_on_drawdown": 0.10,     // resume if it recovers to here, OR ...
+    "halt_cooldown_days": 40,       // ... after this long, once the regime is risk-on
+    "post_halt_risk_factor": 0.5,   // restart at half size ...
+    "post_halt_probation_days": 60  // ... for this long
+  },
+
+  // ----------------------------------------------------------------- COSTS
+  // Groww cash delivery, 2025 published rates. VERIFY THESE AGAINST YOUR OWN
+  // CONTRACT NOTE before you trust a single backtest number. Tariffs change,
+  // and at this account size the flat charges dominate: the DP fee alone is
+  // 0.14% of a Rs 17,000 position.
+  "costs": {
+    "brokerage_pct": 0.001,         // 0.1% ...
+    "brokerage_cap": 20.0,          // ... or Rs 20, whichever is LOWER
+    "brokerage_min": 5.0,
+    "stt_buy_pct": 0.001,
+    "stt_sell_pct": 0.001,
+    "exchange_txn_pct": 0.0000297,
+    "sebi_pct": 0.000001,
+    "ipft_pct": 0.000001,
+    "stamp_duty_buy_pct": 0.00015,  // buy side only
+    "gst_pct": 0.18,
+    "dp_charge_sell": 20.0,         // flat, per scrip, per day, on delivery sells
+    "slippage_bps": 12.0            // each way. Raise it if your fills are worse.
+  },
+
+  "backtest": {
+    "start": "2015-01-01",
+    "end": "",
+    "warmup_bars": 260,
+    "allow_intraday_stops": true    // assumes you actually place the GTT stops
+  },
+
+  // ----------------------------------------------------------------- LEARN
+  "learn": {
+    "train_years": 4,
+    "test_months": 6,
+    "embargo_days": 10,             // dead space so an open trade cannot span the split
+    "n_random_samples": 120,
+    "objective": "calmar_turnover",
+    "robust_neighbourhood": 5,      // score = median of k neighbours, never the peak
+    "promotion_min_edge": 0.05,
+    "promotion_min_trades": 40,
+    "decay_window_trades": 60,
+    "decay_alert_pct": 5.0,
+    "meta_label": {
+      "enabled": false,             // turn on only once the journal has 150+ trades
+      "min_trades": 150,
+      "threshold": 0.5,
+      "l2": 1.0,
+      "epochs": 400,
+      "lr": 0.08
+    }
+  },
+
+  "data": {
+    "cache_dir": "data_cache",
+    "provider": "yfinance",
+    "suffix": ".NS",
+    "index_symbol_map": { "NIFTY100": "^CNX100", "NIFTY50": "^NSEI" }
+  },
+
+  "paths": { "runs_dir": "runs", "state_dir": "state", "orders_dir": "orders" }
+}
