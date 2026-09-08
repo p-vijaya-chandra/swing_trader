@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swingtrader"
+version = "0.1.0"
+description = "Systematic swing-trading system for Nifty 100 cash equities (Groww)"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+# Only needed for live data download. The engine itself is stdlib-only.
+data = ["yfinance>=0.2.40", "pandas>=2.0", "numpy>=1.24"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+swing = "swingtrader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

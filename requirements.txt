@@ -1,0 +1,8 @@
+# The engine (indicators, backtest, walk-forward, learning) needs NOTHING beyond
+# the Python 3.9+ standard library. This is deliberate: it must run on any laptop,
+# any VPS, any CI runner, with no build toolchain.
+#
+# These are only required for downloading live market data:
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.24

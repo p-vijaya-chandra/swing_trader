@@ -1,0 +1,106 @@
+symbol,name,sector,segment
+RELIANCE,Reliance Industries,Energy,NIFTY50
+HDFCBANK,HDFC Bank,Financials,NIFTY50
+ICICIBANK,ICICI Bank,Financials,NIFTY50
+BHARTIARTL,Bharti Airtel,Telecom,NIFTY50
+INFY,Infosys,IT,NIFTY50
+TCS,Tata Consultancy Services,IT,NIFTY50
+ITC,ITC,FMCG,NIFTY50
+SBIN,State Bank of India,Financials,NIFTY50
+LT,Larsen & Toubro,Infrastructure,NIFTY50
+HINDUNILVR,Hindustan Unilever,FMCG,NIFTY50
+BAJFINANCE,Bajaj Finance,Financials,NIFTY50
+AXISBANK,Axis Bank,Financials,NIFTY50
+KOTAKBANK,Kotak Mahindra Bank,Financials,NIFTY50
+M&M,Mahindra & Mahindra,Auto,NIFTY50
+MARUTI,Maruti Suzuki,Auto,NIFTY50
+SUNPHARMA,Sun Pharmaceutical,Pharma,NIFTY50
+NTPC,NTPC,Power,NIFTY50
+HCLTECH,HCL Technologies,IT,NIFTY50
+TATAMOTORS,Tata Motors,Auto,NIFTY50
+ULTRACEMCO,UltraTech Cement,Cement,NIFTY50
+TITAN,Titan Company,Consumer,NIFTY50
+ASIANPAINT,Asian Paints,Consumer,NIFTY50
+POWERGRID,Power Grid Corporation,Power,NIFTY50
+ADANIENT,Adani Enterprises,Infrastructure,NIFTY50
+ADANIPORTS,Adani Ports & SEZ,Infrastructure,NIFTY50
+WIPRO,Wipro,IT,NIFTY50
+ONGC,Oil & Natural Gas Corp,Energy,NIFTY50
+TATASTEEL,Tata Steel,Metals,NIFTY50
+JSWSTEEL,JSW Steel,Metals,NIFTY50
+COALINDIA,Coal India,Energy,NIFTY50
+BAJAJFINSV,Bajaj Finserv,Financials,NIFTY50
+NESTLEIND,Nestle India,FMCG,NIFTY50
+GRASIM,Grasim Industries,Cement,NIFTY50
+HINDALCO,Hindalco Industries,Metals,NIFTY50
+TECHM,Tech Mahindra,IT,NIFTY50
+DRREDDY,Dr Reddys Laboratories,Pharma,NIFTY50
+CIPLA,Cipla,Pharma,NIFTY50
+SBILIFE,SBI Life Insurance,Financials,NIFTY50
+HDFCLIFE,HDFC Life Insurance,Financials,NIFTY50
+INDUSINDBK,IndusInd Bank,Financials,NIFTY50
+BPCL,Bharat Petroleum,Energy,NIFTY50
+EICHERMOT,Eicher Motors,Auto,NIFTY50
+BRITANNIA,Britannia Industries,FMCG,NIFTY50
+APOLLOHOSP,Apollo Hospitals,Healthcare,NIFTY50
+HEROMOTOCO,Hero MotoCorp,Auto,NIFTY50
+TATACONSUM,Tata Consumer Products,FMCG,NIFTY50
+BAJAJ-AUTO,Bajaj Auto,Auto,NIFTY50
+SHRIRAMFIN,Shriram Finance,Financials,NIFTY50
+TRENT,Trent,Consumer,NIFTY50
+JIOFIN,Jio Financial Services,Financials,NIFTY50
+ETERNAL,Eternal (Zomato),Consumer,NIFTY50
+BEL,Bharat Electronics,Defence,NIFTY50
+ABB,ABB India,CapitalGoods,NEXT50
+ADANIENSOL,Adani Energy Solutions,Power,NEXT50
+ADANIGREEN,Adani Green Energy,Power,NEXT50
+ADANIPOWER,Adani Power,Power,NEXT50
+AMBUJACEM,Ambuja Cements,Cement,NEXT50
+DMART,Avenue Supermarts,Consumer,NEXT50
+BAJAJHLDNG,Bajaj Holdings,Financials,NEXT50
+BANKBARODA,Bank of Baroda,Financials,NEXT50
+BERGEPAINT,Berger Paints,Consumer,NEXT50
+BOSCHLTD,Bosch,Auto,NEXT50
+CANBK,Canara Bank,Financials,NEXT50
+CGPOWER,CG Power & Industrial,CapitalGoods,NEXT50
+CHOLAFIN,Cholamandalam Investment,Financials,NEXT50
+COLPAL,Colgate-Palmolive India,FMCG,NEXT50
+DABUR,Dabur India,FMCG,NEXT50
+DIVISLAB,Divis Laboratories,Pharma,NEXT50
+DLF,DLF,Realty,NEXT50
+GAIL,GAIL India,Energy,NEXT50
+GODREJCP,Godrej Consumer Products,FMCG,NEXT50
+HAVELLS,Havells India,CapitalGoods,NEXT50
+HAL,Hindustan Aeronautics,Defence,NEXT50
+HYUNDAI,Hyundai Motor India,Auto,NEXT50
+ICICIGI,ICICI Lombard General Ins,Financials,NEXT50
+ICICIPRULI,ICICI Prudential Life,Financials,NEXT50
+INDHOTEL,Indian Hotels,Consumer,NEXT50
+IOC,Indian Oil Corporation,Energy,NEXT50
+INDIGO,InterGlobe Aviation,Aviation,NEXT50
+IRFC,Indian Railway Finance,Financials,NEXT50
+NAUKRI,Info Edge India,IT,NEXT50
+JSWENERGY,JSW Energy,Power,NEXT50
+JINDALSTEL,Jindal Steel & Power,Metals,NEXT50
+LICI,Life Insurance Corp,Financials,NEXT50
+LODHA,Macrotech Developers,Realty,NEXT50
+LTIM,LTIMindtree,IT,NEXT50
+MOTHERSON,Samvardhana Motherson,Auto,NEXT50
+MARICO,Marico,FMCG,NEXT50
+MAXHEALTH,Max Healthcare,Healthcare,NEXT50
+MUTHOOTFIN,Muthoot Finance,Financials,NEXT50
+PIDILITIND,Pidilite Industries,Chemicals,NEXT50
+PFC,Power Finance Corporation,Financials,NEXT50
+PNB,Punjab National Bank,Financials,NEXT50
+POLYCAB,Polycab India,CapitalGoods,NEXT50
+RECLTD,REC,Financials,NEXT50
+SIEMENS,Siemens India,CapitalGoods,NEXT50
+SOLARINDS,Solar Industries,Chemicals,NEXT50
+SWIGGY,Swiggy,Consumer,NEXT50
+TATAPOWER,Tata Power,Power,NEXT50
+TORNTPHARM,Torrent Pharmaceuticals,Pharma,NEXT50
+TVSMOTOR,TVS Motor Company,Auto,NEXT50
+UNITDSPR,United Spirits,FMCG,NEXT50
+VBL,Varun Beverages,FMCG,NEXT50
+VEDL,Vedanta,Metals,NEXT50
+ZYDUSLIFE,Zydus Lifesciences,Pharma,NEXT50
