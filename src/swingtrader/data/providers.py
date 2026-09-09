@@ -17,22 +17,29 @@ class ProviderError(RuntimeError):
 
 
 class YFinanceProvider:
-    """Yahoo Finance via yfinance. Free, adequate for daily EOD swing work.
+    """Yahoo Finance via yfinance. Free, and adequate for daily EOD swing work.
 
-    Caveats you must know before trusting it:
-      * Yahoo's NSE history is split/bonus adjusted but occasionally carries bad
-        prints; `Series.from_rows` drops incoherent bars.
-      * Use auto_adjust=False and take raw OHLC, then rely on Yahoo's own split
-        handling. Dividend adjustment is deliberately NOT applied: swing stops
-        are placed on traded prices, not total-return prices.
-      * Rate limits are real. Batch, and cache.
+    Things you must know before trusting it:
+      * Yahoo's NSE history is split/bonus adjusted, but not always promptly and
+        not always correctly. Run `swing validate-data` after every fetch - an
+        unadjusted bonus reads to the engine as a -50% day and stops out every
+        holder.
+      * auto_adjust=False, so OHLC are traded prices. Dividend adjustment is
+        deliberately NOT applied: stops are placed on prices that existed, not
+        on a total-return series.
+      * Rate limits are real and unannounced. Symbols are fetched in batches
+        with backoff, and anything that fails is retried individually.
+      * NSE renames tickers (ZOMATO -> ETERNAL). A symbol returning nothing is
+        usually a rename, not an outage.
     """
 
     def __init__(self, suffix: str = ".NS", index_map: Optional[Dict[str, str]] = None,
-                 pause: float = 0.6):
+                 pause: float = 0.8, batch_size: int = 12, max_retries: int = 3):
         self.suffix = suffix
         self.index_map = index_map or {}
         self.pause = pause
+        self.batch_size = batch_size
+        self.max_retries = max_retries
 
     def _yahoo_symbol(self, symbol: str) -> str:
         if symbol in self.index_map:
@@ -40,6 +47,60 @@ class YFinanceProvider:
         if symbol.startswith("^"):
             return symbol
         return f"{symbol}{self.suffix}"
+
+    @staticmethod
+    def _rows_from_frame(df) -> list:
+        """Pull OHLCV out of a yfinance frame, tolerating column-case drift."""
+        cols = {str(c).lower(): c for c in df.columns}
+        need = ("open", "high", "low", "close")
+        if any(c not in cols for c in need):
+            return []
+        vcol = cols.get("volume")
+        rows = []
+        for ts, r in df.iterrows():
+            o, h, l, c = (r[cols["open"]], r[cols["high"]],
+                          r[cols["low"]], r[cols["close"]])
+            if any(x != x for x in (o, h, l, c)):      # NaN row: symbol not traded
+                continue
+            rows.append([str(ts)[:10], o, h, l, c,
+                         (r[vcol] if vcol and r[vcol] == r[vcol] else 0.0)])
+        return rows
+
+    def _fetch_one(self, yf, sym: str, start: str, end: str) -> Optional[Series]:
+        ysym = self._yahoo_symbol(sym)
+        try:
+            df = yf.Ticker(ysym).history(start=start, end=end or None, interval="1d",
+                                         auto_adjust=False, actions=False)
+        except Exception as exc:                      # noqa: BLE001 - vendor raises anything
+            print(f"    ! {sym} ({ysym}): {exc}")
+            return None
+        if df is None or len(df) == 0:
+            return None
+        ser = Series.from_rows(sym, self._rows_from_frame(df))
+        return ser if len(ser) else None
+
+    def _fetch_batch(self, yf, syms: list, start: str, end: str) -> Dict[str, Series]:
+        """One multi-ticker request. Far kinder to the rate limiter than N requests."""
+        mapping = {self._yahoo_symbol(s): s for s in syms}
+        try:
+            df = yf.download(list(mapping), start=start, end=end or None,
+                             interval="1d", auto_adjust=False, actions=False,
+                             group_by="ticker", progress=False, threads=False)
+        except Exception as exc:                      # noqa: BLE001
+            print(f"    ! batch failed ({exc}); falling back to individual requests")
+            return {}
+        if df is None or len(df) == 0:
+            return {}
+        out: Dict[str, Series] = {}
+        for ysym, sym in mapping.items():
+            try:
+                sub = df[ysym] if len(mapping) > 1 else df
+            except (KeyError, TypeError):
+                continue
+            ser = Series.from_rows(sym, self._rows_from_frame(sub))
+            if len(ser):
+                out[sym] = ser
+        return out
 
     def fetch(self, symbols: Iterable[str], start: str, end: str = "") -> Dict[str, Series]:
         try:
@@ -49,30 +110,42 @@ class YFinanceProvider:
                 "yfinance is not installed. Run: pip install -r requirements.txt"
             ) from exc
 
-        out: Dict[str, Series] = {}
         syms = list(symbols)
-        for i, sym in enumerate(syms):
-            ysym = self._yahoo_symbol(sym)
-            try:
-                t = yf.Ticker(ysym)
-                df = t.history(start=start, end=end or None, interval="1d",
-                               auto_adjust=False, actions=False)
-            except Exception as exc:                      # noqa: BLE001 - vendor can raise anything
-                print(f"  ! {sym} ({ysym}): {exc}")
-                continue
-            if df is None or len(df) == 0:
-                print(f"  ! {sym} ({ysym}): no data returned")
-                continue
-            rows = []
-            for ts, r in df.iterrows():
-                rows.append([str(ts)[:10], r["Open"], r["High"], r["Low"],
-                             r["Close"], r.get("Volume", 0.0)])
-            ser = Series.from_rows(sym, rows)
-            if len(ser):
-                out[sym] = ser
-                print(f"  + {sym}: {len(ser)} bars {ser.dates[0]}..{ser.dates[-1]}")
-            if self.pause and i < len(syms) - 1:
-                time.sleep(self.pause)
+        out: Dict[str, Series] = {}
+        pending = list(syms)
+
+        for attempt in range(1, self.max_retries + 1):
+            if not pending:
+                break
+            if attempt > 1:
+                wait = self.pause * (2 ** (attempt - 1))
+                print(f"  retry {attempt}/{self.max_retries} for {len(pending)} "
+                      f"symbol(s) after {wait:.0f}s")
+                time.sleep(wait)
+
+            still: list = []
+            # Batch first; anything the batch misses is retried one at a time,
+            # because a single bad ticker can poison a whole multi-ticker request.
+            for k in range(0, len(pending), self.batch_size):
+                chunk = pending[k:k + self.batch_size]
+                got = self._fetch_batch(yf, chunk, start, end) if len(chunk) > 1 else {}
+                for sym in chunk:
+                    ser = got.get(sym)
+                    if ser is None:
+                        ser = self._fetch_one(yf, sym, start, end)
+                    if ser is not None:
+                        out[sym] = ser
+                        print(f"  + {sym:14s} {len(ser):5d} bars  "
+                              f"{ser.dates[0]}..{ser.dates[-1]}")
+                    else:
+                        still.append(sym)
+                    time.sleep(self.pause * 0.2)
+                if self.pause and k + self.batch_size < len(pending):
+                    time.sleep(self.pause)
+            pending = still
+
+        for sym in pending:
+            print(f"  ! {sym}: no data after {self.max_retries} attempts")
         return out
 
 

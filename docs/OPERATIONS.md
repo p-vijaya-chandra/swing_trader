@@ -17,7 +17,29 @@ export PYTHONPATH=src                    # or: pip install -e .
 
 swing doctor                             # checks config and data for problems
 swing fetch --start 2014-01-01           # ~10 min, rate-limited by the vendor
+swing validate-data                      # REQUIRED - see below
 swing universe --check                   # confirms what actually cached
+```
+
+### Always run `swing validate-data` after a fetch
+
+Free EOD data is good enough to trade on and bad enough to ruin a backtest, and
+it never announces the difference. Every defect it looks for produces a
+*plausible* equity curve rather than an error, so nothing downstream will warn
+you. Measured on this system:
+
+| Defect | What it does |
+|---|---|
+| Unadjusted bonus/split | Reads as a −50% day. Holders gap through their stops, and ATR is inflated **4.0×** immediately, still **1.65×** twenty sessions later — so the next position in that name is sized **0.32×** what it should be. |
+| Forward-filled suspension | True range goes to zero, ATR decays to **0.71×** after twenty frozen bars, and the next position is sized **1.4× too large** — in the least tradeable name on the board. |
+| Missing sessions | A "20-day breakout" computed over 20 rows spanning 32 calendar days is not the indicator you think it is. |
+| Stale cache | Today's orders generated from three-week-old prices. |
+
+It exits non-zero on anything that would corrupt results, so it can gate a cron
+job. Indian large caps issue bonuses regularly — this is routine, not paranoia.
+
+```bash
+swing validate-data --write-exclusions state/excluded.txt   # list failing symbols
 ```
 
 `swing fetch` uses Yahoo Finance, which is free and adequate for daily EOD work
@@ -48,9 +70,19 @@ until it is yes.
 ## The daily routine (after 15:30 IST)
 
 ```bash
-swing fetch --start 2024-01-01     # refresh the last stretch
+swing fetch                        # incremental: only the bars since last time
+swing validate-data                # exits non-zero if anything is wrong
 swing plan                         # writes orders/<date>.md
 ```
+
+`swing fetch` is incremental by default — it asks only for bars since each
+symbol's last cached one, so a daily refresh costs a few hundred rows rather
+than ten years. Use `--full` to re-download from scratch.
+
+A note on "real-time": this is a daily-bar system. It makes decisions on the
+close and fills at the next open, so you want the session's *closing* data —
+run the fetch after 15:30 IST. Intraday prices would add nothing here and the
+cost model assumes delivery, not intraday, rates.
 
 The plan is a sheet with five sections. Work them **in order** — exits first,
 because they free the cash the entries need.
@@ -203,6 +235,19 @@ At larger sizes, revisit `risk.max_positions` (more positions become affordable)
 | `state/promotions.jsonl` | Audit trail of every promotion decision |
 | `orders/<date>.md` | Daily order sheets |
 | `runs/*.html` | Backtest reports |
+
+## Moving data between machines
+
+If you fetch on one machine and want identical backtests on another:
+
+```bash
+swing bundle export data/nifty100.tar.gz    # on the machine with data access
+swing bundle import data/nifty100.tar.gz    # anywhere else
+swing validate-data
+```
+
+A bundle is a plain tar.gz of the CSV cache — inspectable and diffable, not a
+pickle. Round-tripping is byte-exact, so backtests reproduce.
 
 Back up `state/` — the journal is the only record of what actually happened, and
 it is what the learning loop runs on.

@@ -93,11 +93,36 @@ def cmd_fetch(args) -> int:
         print(f"error: {exc}")
         return 2
 
-    print(f"Fetching {len(want)} symbols from {args.start} ...")
-    got = prov.fetch(want, args.start, args.end or "")
+    # Incremental by default: for anything already cached, ask only for the bars
+    # since its last one. A daily refresh then costs a few hundred rows instead
+    # of ten years, which is the difference between a 10-second cron job and one
+    # that gets rate-limited every morning.
+    plan: Dict[str, str] = {}
+    for sym in want:
+        if args.full:
+            plan[sym] = args.start
+            continue
+        cached = store.load(sym)
+        if cached is None or not len(cached):
+            plan[sym] = args.start
+        else:
+            plan[sym] = _shift_iso(cached.dates[-1], -5)   # small overlap for restatements
+
+    fresh = [s for s in want if plan[s] == args.start]
+    incr = [s for s in want if s not in fresh]
+    print(f"Fetching {len(want)} symbols "
+          f"({len(fresh)} full history, {len(incr)} incremental)")
+    if incr and not args.full:
+        print("  (pass --full to re-download everything from scratch)")
+
+    got: Dict[str, object] = {}
+    for group_start in sorted(set(plan.values())):
+        batch = [s for s in want if plan[s] == group_start]
+        got.update(prov.fetch(batch, group_start, args.end or ""))
+
     for sym, ser in got.items():
-        merged = store.upsert(ser)
-        del merged
+        store.upsert(ser)
+
     print(f"\nCached {len(got)}/{len(want)} symbols into {store.cache_dir}")
     missing = [s for s in want if s not in got]
     if missing:
@@ -105,7 +130,126 @@ def cmd_fetch(args) -> int:
               + (" ..." if len(missing) > 20 else ""))
         print("Common causes: the symbol was renamed on NSE (ZOMATO -> ETERNAL), it is "
               "newly listed, or the vendor is rate-limiting. Re-run to retry.")
+
+    print("\nNow run `swing validate-data`. Free EOD data is good enough to trade on")
+    print("and bad enough to ruin a backtest, and it never announces the difference.")
     return 0
+
+
+def _shift_iso(date: str, days: int) -> str:
+    import datetime as dt
+    return (dt.date.fromisoformat(date[:10]) + dt.timedelta(days=days)).isoformat()
+
+
+# --------------------------------------------------------------- validate-data
+def cmd_validate(args) -> int:
+    cfg = _cfg(args)
+    from .data.quality import check_dataset
+    from .data.store import DataStore
+
+    symbols, _, _ = load_universe(cfg.get("universe.file"))
+    store = DataStore(cfg.get("data.cache_dir", "data_cache"))
+    series = store.load_many(symbols)
+    index = store.load(cfg.get("regime.index_symbol", "NIFTY100"))
+    if not series:
+        print(f"Nothing cached in {store.cache_dir}. Run `swing fetch` first.")
+        return 2
+
+    rep = check_dataset(series, index,
+                        min_bars=int(cfg.get("universe.min_history_bars", 260)),
+                        universe=symbols)
+
+    print(f"\n{rep.n_symbols} symbols, {rep.n_bars:,} bars, "
+          f"{rep.first_date} .. {rep.last_date}")
+    print(f"index series: {'present' if rep.index_present else 'MISSING'}\n")
+
+    if not rep.issues:
+        print("No problems found. The data is fit to backtest on.")
+        return 0
+
+    for issue in rep.errors:
+        print(issue)
+    if rep.errors and rep.warnings:
+        print()
+    for issue in rep.warnings[: args.max_warnings]:
+        print(issue)
+    if len(rep.warnings) > args.max_warnings:
+        print(f"... and {len(rep.warnings) - args.max_warnings} more warnings "
+              f"(--max-warnings to show more)")
+
+    print(f"\n{len(rep.errors)} error(s), {len(rep.warnings)} warning(s)")
+    counts = rep.by_kind()
+    for k, v in sorted(counts.items(), key=lambda x: -x[1]):
+        print(f"  {k:22s} {v}")
+
+    bad = rep.bad_symbols()
+    if bad:
+        print(f"\n{len(bad)} symbol(s) with errors: {', '.join(bad[:20])}"
+              + (" ..." if len(bad) > 20 else ""))
+        if args.write_exclusions:
+            with open(args.write_exclusions, "w", encoding="utf-8") as fh:
+                fh.write("# symbols failing swing validate-data\n")
+                for b in bad:
+                    if not b.startswith("("):
+                        fh.write(b + "\n")
+            print(f"Written to {args.write_exclusions}")
+        else:
+            print("Fix them at the source, or drop them: "
+                  "`swing validate-data --write-exclusions state/excluded.txt`")
+
+    print("\nWhy this matters: every defect above produces a plausible equity curve")
+    print("rather than an error. An unadjusted bonus reads as a -50% day, stops out")
+    print("every holder, and leaves ATR inflated for weeks afterwards.")
+    return 1 if rep.errors else 0
+
+
+# --------------------------------------------------------------------- bundle
+def cmd_bundle(args) -> int:
+    """Export/import the price cache as one file.
+
+    The point is portability: fetch on a machine with market-data access, then
+    move the exact bytes somewhere else and get identical backtests. A bundle is
+    a plain tar.gz of CSVs - inspectable, diffable, and not a pickle.
+    """
+    cfg = _cfg(args)
+    import tarfile
+    from .data.store import DataStore
+
+    store = DataStore(cfg.get("data.cache_dir", "data_cache"))
+
+    if args.bundle_cmd == "export":
+        syms = store.symbols()
+        if not syms:
+            print(f"Nothing cached in {store.cache_dir}.")
+            return 2
+        os.makedirs(os.path.dirname(args.path) or ".", exist_ok=True)
+        with tarfile.open(args.path, "w:gz") as tf:
+            tf.add(store.cache_dir, arcname="data_cache")
+        size = os.path.getsize(args.path)
+        cov = store.coverage()
+        ends = [v[1] for v in cov.values()]
+        print(f"Exported {len(syms)} symbols ({size/1e6:.1f} MB) to {args.path}")
+        if ends:
+            print(f"Latest session in the bundle: {max(ends)}")
+        return 0
+
+    if args.bundle_cmd == "import":
+        if not os.path.exists(args.path):
+            print(f"No such file: {args.path}")
+            return 2
+        with tarfile.open(args.path, "r:gz") as tf:
+            members = [m for m in tf.getmembers()
+                       if m.isfile() and m.name.endswith(".csv")
+                       and ".." not in m.name and not m.name.startswith("/")]
+            if not members:
+                print("Bundle contains no CSVs.")
+                return 2
+            dest = os.path.dirname(store.cache_dir) or "."
+            tf.extractall(dest, members=members)
+        print(f"Imported {len(members)} symbol files into {store.cache_dir}")
+        print("Run `swing validate-data` before trusting it.")
+        return 0
+    return 1
 
 
 # -------------------------------------------------------------------- universe
@@ -747,7 +891,24 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--end", default="")
     sp.add_argument("--provider", default="", help="yfinance | csvdir:/path")
     sp.add_argument("--symbols", nargs="*", help="only these symbols")
-    sp.set_defaults(func=cmd_fetch)
+    sp.add_argument("--full", action="store_true",
+                    help="re-download everything instead of just the new bars")
+    sp.set_defaults(func=cmd_fetch, champion=False)
+
+    sp = sub.add_parser("validate-data",
+                        help="check cached data for defects that corrupt backtests")
+    sp.add_argument("--max-warnings", type=int, default=25)
+    sp.add_argument("--write-exclusions", metavar="PATH",
+                    help="write failing symbols to a file")
+    sp.set_defaults(func=cmd_validate, champion=False)
+
+    sp = sub.add_parser("bundle", help="export/import the price cache as one file")
+    bsub = sp.add_subparsers(dest="bundle_cmd", required=True)
+    be = bsub.add_parser("export", help="write the cache to a .tar.gz")
+    be.add_argument("path")
+    bi = bsub.add_parser("import", help="load a .tar.gz written by `bundle export`")
+    bi.add_argument("path")
+    sp.set_defaults(func=cmd_bundle, champion=False)
 
     sp = sub.add_parser("universe", help="show or check the universe")
     sp.add_argument("--check", action="store_true", help="compare against the price cache")

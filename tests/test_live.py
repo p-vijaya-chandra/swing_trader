@@ -149,3 +149,47 @@ def test_plan_csv_is_written_and_parseable(tmp_path, cfg, dataset):
     for r in rows:
         assert r["as_of"] == as_of
         assert r["action"] in ("BUY", "SELL_EXIT", "UPDATE_STOP", "PLACE_STOP")
+
+
+def test_bundle_round_trips_byte_identically(tmp_path, cfg):
+    """A bundle is how price data moves between a machine with market-data
+    access and one without. If it is not exact, backtests are not reproducible."""
+    import tarfile
+
+    from swingtrader.data.models import Series
+    from swingtrader.data.store import DataStore
+
+    src = DataStore(str(tmp_path / "a" / "data_cache"))
+    rows = [[f"2025-01-{d:02d}", 100 + d, 101 + d, 99 + d, 100.5 + d, 1000 * d]
+            for d in range(1, 20)]
+    for sym in ("INFY", "M&M", "BAJAJ-AUTO"):
+        src.save(Series.from_rows(sym, rows))
+
+    path = str(tmp_path / "bundle.tar.gz")
+    with tarfile.open(path, "w:gz") as tf:
+        tf.add(src.cache_dir, arcname="data_cache")
+
+    dst_root = tmp_path / "b"
+    dst_root.mkdir()
+    with tarfile.open(path, "r:gz") as tf:
+        members = [m for m in tf.getmembers()
+                   if m.isfile() and m.name.endswith(".csv") and ".." not in m.name]
+        tf.extractall(str(dst_root), members=members)
+
+    dst = DataStore(str(dst_root / "data_cache"))
+    assert sorted(dst.symbols()) == sorted(src.symbols())
+    for sym in src.symbols():
+        assert dst.load(sym).to_rows() == src.load(sym).to_rows()
+
+
+def test_symbols_with_awkward_characters_survive_the_cache(tmp_path):
+    """M&M and BAJAJ-AUTO are real Nifty 100 tickers; the cache filename mapping
+    must round-trip them."""
+    from swingtrader.data.models import Series
+    from swingtrader.data.store import DataStore
+    store = DataStore(str(tmp_path / "c"))
+    rows = [["2025-01-02", 10, 11, 9, 10.5, 100]]
+    for sym in ("M&M", "BAJAJ-AUTO", "^CNX100", "NIFTY100"):
+        store.save(Series.from_rows(sym, rows))
+        assert store.load(sym) is not None, sym
+    assert set(store.symbols()) == {"M&M", "BAJAJ-AUTO", "^CNX100", "NIFTY100"}

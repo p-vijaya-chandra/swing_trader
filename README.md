@@ -67,6 +67,7 @@ swing backtest --synthetic --report runs/demo.html
 # then the real thing
 swing doctor
 swing fetch --start 2014-01-01
+swing validate-data                  # do not skip this
 swing backtest --report runs/baseline.html
 swing walkforward
 ```
@@ -75,7 +76,9 @@ swing walkforward
 
 | | |
 |---|---|
-| `swing fetch` | Download/refresh price history into the local cache |
+| `swing fetch` | Download/refresh price history (incremental by default) |
+| `swing validate-data` | Catch vendor defects that silently corrupt backtests |
+| `swing bundle` | Export/import the price cache to move it between machines |
 | `swing doctor` | Check config and data for problems before they cost money |
 | `swing costs` | What frictions actually cost at your position size |
 | `swing backtest` | One backtest plus a self-contained HTML report |
@@ -133,6 +136,13 @@ is 0.14% on its own. Measured on this system: **+0.19R per trade gross, −0.07R
 net.** Costs consumed the entire edge. That single measurement is why the
 defaults hold positions for weeks rather than days. Run `swing costs`.
 
+**Vendor data is checked before it is trusted.** `swing validate-data` looks for
+the defects that produce a plausible equity curve rather than an error:
+unadjusted bonuses (measured: ATR inflated 4.0x immediately and still 1.65x
+twenty sessions later, sizing the next position at 0.32x), forward-filled
+suspensions (ATR decays to 0.71x, sizing 1.4x too large), missing sessions, and
+stale caches. It exits non-zero, so it can gate a cron job.
+
 **Synthetic data is for testing the pipeline, never for evidence.** `--synthetic`
 exercises every code path without a vendor, and every command that uses it says
 so loudly. `swing learn` refuses outright to promote a champion fitted on it.
@@ -140,13 +150,14 @@ so loudly. `swing learn` refuses outright to promote a champion fitted on it.
 ## Tests
 
 ```bash
-python -m pytest tests/ -q      # 93 tests
+python -m pytest tests/ -q      # 116 tests
 ```
 
 Covering indicator correctness against naive implementations, the no-lookahead
 truncation test, cash/exposure/sector/heat invariants, the circuit-breaker
-hysteresis, cost monotonicity, backtest-live parity, and the learning
-machinery's refusal to promote noise.
+hysteresis, cost monotonicity, backtest-live parity, data-quality detection
+(each defect planted individually, plus a no-false-positives check on clean
+data), and the learning machinery's refusal to promote noise.
 
 ## Status and honest caveats
 
