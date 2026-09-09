@@ -1,10 +1,7 @@
 """The live layer: position book accounting and the order sheet."""
-import json
-import os
-
 import pytest
 
-from swingtrader.live import (DailyPlan, LivePlanner, LivePosition, PositionBook,
+from swingtrader.live import (LivePlanner, LivePosition, PositionBook,
                               render_plan_markdown, write_plan_csv)
 
 

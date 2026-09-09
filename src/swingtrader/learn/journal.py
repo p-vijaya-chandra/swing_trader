@@ -21,12 +21,11 @@ answers two questions.
 from __future__ import annotations
 
 import csv
-import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ..util import NA, bootstrap_mean_ci, is_na, mean, median, percentile, stdev
+from ..util import NA, is_na, mean, percentile
 
 
 class Journal:

@@ -15,7 +15,7 @@ import csv
 import json
 import os
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from .config import Config
 from .costs import CostModel
@@ -23,7 +23,7 @@ from .features import Features
 from .portfolio import RiskManager
 from .regime import RISK_OFF, RegimeState
 from .rules import close_exit_reason, ratchet, trail_stop_level
-from .strategy import Candidate, SwingStrategy
+from .strategy import SwingStrategy
 from .util import NA, fmt_inr, is_na
 
 
@@ -187,7 +187,6 @@ class LivePlanner:
                 "risk-on regime.")
 
         ranks: Dict[str, int] = {}
-
         if int(self.cfg.get("exit.rank_exit_threshold", 0)) > 0:
             ranks = {c.symbol: c.rank
                      for c in self.strategy.rank_universe(self.feats, as_of, equity)}
@@ -223,13 +222,11 @@ class LivePlanner:
                     f"--date {breach_date} --reason stop`. Listed as an exit below so "
                     f"the book cannot silently drift out of sync with your account.")
 
-            atr = f.get("atr", i)
             rps = p.risk_per_share or max(p.entry_price - p.initial_stop, 1e-9)
             r_now = (close - p.entry_price) / rps
 
+            # consecutive closes below the pullback EMA, counted backwards
             below = 0
-            ema_n = int(self.cfg.get("exit.momentum_exit_ema", 20))
-            del ema_n
             for k in range(i, max(j or 0, i - 10) - 1, -1):
                 e = f.get("ema_pull", k)
                 if is_na(e) or f.series.close[k] >= e:

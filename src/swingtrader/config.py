@@ -10,7 +10,7 @@ import copy
 import json
 import os
 import re
-from typing import Any, Dict, Iterable
+from typing import Any, Dict
 
 DEFAULTS: Dict[str, Any] = {
     "capital": 100000.0,

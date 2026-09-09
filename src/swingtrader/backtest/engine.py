@@ -19,14 +19,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional
 
 from ..config import Config
 from ..costs import CostModel
 from ..data.models import Series
 from ..features import Features
 from ..portfolio import Position, RiskManager, Trade
-from ..regime import RISK_OFF, RegimeModel, RegimeState
+from ..regime import RISK_OFF, RegimeModel
 from ..rules import close_exit_reason, ratchet, trail_stop_level
 from ..strategy import Candidate, SwingStrategy
 from ..util import NA, is_na

@@ -70,10 +70,8 @@ class SwingStrategy:
         self.pull_max_dist = float(e.get("pullback_max_dist_atr", 1.0))
         self.min_score_z = float(e.get("min_score_z", 0.0))
 
-        self.init_stop_mult = float(cfg.get("exit.init_stop_atr_mult", 2.5))
-        self.min_stop_mult = float(cfg.get("exit.min_stop_atr_mult", 1.5))
-        self.max_stop_mult = float(cfg.get("exit.max_stop_atr_mult", 3.5))
-        self.use_structure_stop = bool(cfg.get("exit.use_structure_stop", True))
+        # Stop construction lives in rules.py so the live planner and the
+        # backtest cannot disagree about where a stop goes.
 
     # ------------------------------------------------------------------ screen
     def passes_screen(self, f: Features, i: int, equity: float) -> Optional[str]:

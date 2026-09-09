@@ -2,8 +2,6 @@
 import json
 import os
 
-import pytest
-
 from swingtrader.config import Config, deep_merge, strip_jsonc
 
 BASE = os.path.join(os.path.dirname(__file__), "..", "config", "base.jsonc")

@@ -23,7 +23,6 @@ Two details that are easy to skip and expensive to skip:
 from __future__ import annotations
 
 import datetime as _dt
-import math
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -65,7 +64,7 @@ def make_folds(dates: Sequence[str], train_years: float, test_months: int,
     """Rolling folds across the available history."""
     if not dates:
         return []
-    first, last = dates[0], dates[-1]
+    last = dates[-1]
     # leave room for indicator warm-up before the first training window
     origin = dates[min(warmup_bars, len(dates) - 1)]
     folds: List[Fold] = []

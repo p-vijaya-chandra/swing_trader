@@ -11,7 +11,6 @@ If any component peeks ahead, the two runs diverge.
 """
 import pytest
 
-from swingtrader.backtest import BacktestEngine
 from swingtrader.features import build_features
 from swingtrader.regime import RegimeModel
 from swingtrader.runtime import Dataset, run_backtest

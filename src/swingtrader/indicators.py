@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from typing import List, Sequence
 
-from .util import NA, is_na, linreg_slope_r2, median, percentile
+from .util import NA, is_na, linreg_slope_r2, median
 
 
 def sma(xs: Sequence[float], n: int) -> List[float]:

@@ -191,7 +191,7 @@ def cmd_backtest(args) -> int:
 def cmd_walkforward(args) -> int:
     cfg = _cfg(args)
     ds = _dataset(cfg, args)
-    from .learn import WalkForward, objective_score
+    from .learn import WalkForward
 
     wf = WalkForward(cfg, ds, run_backtest, verbose=True)
     folds = wf.folds()

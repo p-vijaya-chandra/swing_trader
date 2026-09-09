@@ -1,4 +1,3 @@
-import csv
 import os
 import sys
 
@@ -7,7 +6,6 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from swingtrader.config import Config          # noqa: E402
-from swingtrader.data.synthetic import generate  # noqa: E402
 from swingtrader.runtime import Dataset, load_universe  # noqa: E402
 
 UNIVERSE = os.path.join(os.path.dirname(__file__), "..", "config", "universe_nifty100.csv")

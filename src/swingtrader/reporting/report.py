@@ -11,8 +11,7 @@ import html
 import os
 from typing import Any, Dict, List, Optional, Sequence
 
-from ..backtest.metrics import summary_lines
-from ..util import NA, fmt_inr, is_na, percentile
+from ..util import fmt_inr, is_na
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -44,9 +43,10 @@ def _svg_path(values: Sequence[float], w: int, h: int, pad: int,
     import math
     if len(values) < 2:
         return ""
-    vals = [max(v, 1e-9) for v in values]
-    if log:
-        vals = [math.log(v) for v in vals]
+    # The positive clamp exists only to keep log() defined. Applying it
+    # unconditionally silently flattened the drawdown chart to a straight line,
+    # since every drawdown value is <= 0.
+    vals = [math.log(max(v, 1e-9)) for v in values] if log else list(values)
     lo, hi = min(vals), max(vals)
     rng = (hi - lo) or 1.0
     n = len(vals)

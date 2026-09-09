@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import math
-from typing import Iterable, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 NA = float("nan")
 
