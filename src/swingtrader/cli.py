@@ -9,6 +9,7 @@
     swing plan        write tomorrow's order sheet for Groww
     swing position    record fills and closes
     swing journal     attribution and edge-decay report over your real trades
+    swing benchmark   compare with Nifty buy-and-hold and plain monthly momentum
     swing costs       what frictions actually cost at your position size
     swing doctor      check the setup and the data for problems
     swing live        real-time execution: replay, parity, shadow, live
@@ -303,10 +304,14 @@ def cmd_backtest(args) -> int:
     print()
     print("\n".join(summary_lines(m)))
 
-    from .reporting import monthly_table_text, equity_sparkline
+    from .reporting import breakdown_lines, monthly_table_text, equity_sparkline
     print("\nMonthly returns")
     print("\n".join(monthly_table_text(m.get("monthly_returns") or {})))
     print("\nEquity  " + equity_sparkline(res.equity_curve))
+    print("\nWhere the result comes from (closed trades, per trade, in units of risk)")
+    print("\n".join(breakdown_lines(res.trades)))
+    print("  gross R = price move after slippage; costs R = charges. If gross R is")
+    print("  already negative, the signals are the problem, not the costs.")
 
     if res.open_positions:
         print(f"\nStill open at the end ({len(res.open_positions)}):")
@@ -869,6 +874,58 @@ def cmd_doctor(args) -> int:
     return 1 if problems else 0
 
 
+# ------------------------------------------------------------------ benchmark
+def cmd_benchmark(args) -> int:
+    """Put the swing system's result next to what it has to beat."""
+    cfg = _cfg(args)
+    ds = _dataset(cfg, args)
+    from .benchmark import buy_and_hold_index, momentum_rotation
+    if ds.index is None:
+        print("No index series cached - run `swing fetch` first.")
+        return 1
+    bt = run_backtest(cfg, ds, start=args.start or "", end=args.end or "")
+    if not bt.daily:
+        print("No sessions in range - check --start/--end against the cached data.")
+        return 1
+    start, end = bt.dates[0], bt.dates[-1]
+    capital = float(cfg.get("capital", 100000.0))
+
+    rows = [("Nifty 100 buy-and-hold", buy_and_hold_index(ds.index, start, end, capital)
+             .metrics(), None)]
+    for ma in (0, 200):
+        r = momentum_rotation(ds, cfg, start, end, top_n=args.top, ma_filter=ma,
+                              capital=capital)
+        rows.append((r.name, r.metrics(), r.trades))
+    rows.append(("Swing system (current config)",
+                 compute_metrics(bt.dates, bt.equity_curve, bt.trades, bt.costs_total),
+                 len(bt.trades)))
+
+    def pct(v, d=1):
+        return "n/a" if is_na(v) or v is None else f"{100 * v:.{d}f}%"
+
+    print(f"\n{start} .. {end}, starting capital Rs {fmt_inr(capital)[:-3]}, "
+          f"Groww costs at this size\n")
+    print(f"  {'':36s} {'CAGR':>7s} {'max DD':>7s} {'Sharpe':>6s} {'up mo':>6s} "
+          f"{'>=+8% mo':>9s} {'trades':>6s} {'costs/yr':>9s}")
+    for name, m, trades in rows:
+        sharpe = m.get("sharpe")
+        cpy = (m.get("costs_total") or 0.0) / (m.get("years") or 1.0)
+        print(f"  {name:36s} {pct(m.get('cagr')):>7s} {pct(m.get('max_drawdown')):>7s} "
+              f"{'n/a' if is_na(sharpe) else format(sharpe, '.2f'):>6s} "
+              f"{pct(m.get('monthly_win_rate'), 0):>6s} "
+              f"{str(m.get('months_ge_8pct', 0)) + ' of ' + str(m.get('n_months', 0)):>9s} "
+              f"{'-' if trades is None else str(trades):>6s} "
+              f"{fmt_inr(round(cpy))[:-3]:>9s}")
+    print("\n  up mo: share of months that made money. >=+8% mo: months at your target.")
+    print("  Sharpe is over a 6.5% risk-free rate. Trades are closed round trips.")
+    print("\n  Survivorship: the momentum rows and the swing system both choose from")
+    print("  TODAY's Nifty 100 list, so both are flattered against the index row,")
+    print("  which has no such bias. Compare them with each other first.")
+    if ds.synthetic:
+        print(f"\n*** {SYNTHETIC_WARNING} ***")
+    return 0
+
+
 # ----------------------------------------------------------------------- live
 def _live_paths(cfg: Config, mode: str) -> tuple:
     base = cfg.get("paths.state_dir", "state")
@@ -1241,6 +1298,13 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--first", type=int, help="index of the first session")
     pa.add_argument("--out")
     sp.set_defaults(func=cmd_live, champion=False)
+
+    sp = sub.add_parser("benchmark", help="compare with buy-and-hold and plain momentum")
+    common(sp)
+    sp.add_argument("--start", default="")
+    sp.add_argument("--end", default="")
+    sp.add_argument("--top", type=int, default=10, help="names held by the momentum rotation")
+    sp.set_defaults(func=cmd_benchmark)
 
     sp = sub.add_parser("costs", help="what frictions cost at your size")
     sp.set_defaults(func=cmd_costs, champion=False)

@@ -85,3 +85,23 @@ def test_backtest_charges_slippage_exactly_once(cfg, dataset):
     assert checked > 20
     # the cost REPORT still shows slippage, once, as its own line
     assert res.costs_breakdown.get("slippage", 0) > 0
+
+
+def test_trade_pnl_reconciles_with_the_cash_ledger(cfg, dataset):
+    """Closed trades plus what is still open must add up to the equity change.
+
+    Each trade's net_pnl used to deduct only the exit leg's charges. The cash
+    ledger paid both legs, so the equity curve was right while every per-trade
+    statistic - win rate, profit factor, expectancy in R, and the learning
+    loop's inputs - was flattered by the buy-side charges.
+    """
+    from swingtrader.runtime import run_backtest
+    res = run_backtest(cfg, dataset, start="2016-01-01")
+    assert len(res.trades) > 20
+    closed = sum(t.net_pnl for t in res.trades)
+    still_open = sum(p["unrealised"] + p["realised"] - p["costs_paid"]
+                     for p in res.open_positions)
+    change = res.end_equity - res.start_equity
+    assert abs(change - (closed + still_open)) < 1.0, (change, closed, still_open)
+    for t in res.trades:
+        assert abs(t.net_pnl - (t.gross_pnl - t.costs)) < 1e-6

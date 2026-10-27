@@ -217,8 +217,13 @@ class BacktestEngine:
             proceeds = fill * p.qty - c
             cash += proceeds
             gross = (fill - p.entry_price) * p.qty + p.realised_pnl
+            # Every charge the round trip paid: entry, any scale-out, and this
+            # exit. Deducting only the exit leg made each trade look better by
+            # its buy-side charges (~0.03R at a Rs 17k position) - the equity
+            # curve was right, but win rate, profit factor and expectancy were
+            # flattered, and so was everything the learning loop read from them.
             total_costs = p.costs_paid + c
-            net = gross - c
+            net = gross - total_costs
             r = (net / p.initial_risk_value) if p.initial_risk_value > 0 else NA
             res.trades.append(Trade(
                 symbol=p.symbol, sector=p.sector, setup=p.setup,
@@ -478,7 +483,8 @@ class BacktestEngine:
                 "symbol": sym, "qty": p.qty, "entry_date": p.entry_date,
                 "entry_price": p.entry_price, "last_price": px, "stop": p.stop,
                 "r_multiple": p.r_multiple(px), "bars_held": p.bars_held,
-                "unrealised": (px - p.entry_price) * p.qty})
+                "unrealised": (px - p.entry_price) * p.qty,
+                "realised": p.realised_pnl, "costs_paid": p.costs_paid})
 
         res.halt_days = halt_days
         res.end_equity = equity

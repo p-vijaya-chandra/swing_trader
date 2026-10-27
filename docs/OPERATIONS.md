@@ -56,8 +56,17 @@ Then look at the evidence for yourself:
 ```bash
 swing costs                                        # what trading actually costs you
 swing backtest --report runs/baseline.html         # the honest baseline
+swing benchmark                                    # what it has to beat
 swing walkforward                                  # out of sample, fold by fold
 ```
+
+`swing benchmark` runs the same period with the same costs for Nifty 100
+buy-and-hold and for plain monthly momentum (top 10 by 6-month return). A
+swing system that cannot beat the second one is complexity without a payoff,
+however good its own report looks. The end of `swing backtest`'s output says
+where its result comes from: if **gross R** is already negative, the signals
+are wrong and cutting costs will not save it; if gross is positive and net
+negative, turnover is the problem.
 
 Read `runs/baseline.html` before risking money. Look at the **monthly return
 table** and the **longest underwater period**, not the CAGR. The question to

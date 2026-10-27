@@ -11,6 +11,14 @@ financial history. The system is built properly and it is yours to run — but y
 should know what it can actually return before you trade it. That document is
 the arithmetic, not an opinion.
 
+> **Status: do not trade this yet.** On its first run against real Nifty 100
+> history (2015-2026) the shipped configuration lost money — CAGR −4.7%,
+> maximum drawdown −43% — over years in which simply holding the index made
+> money. The engine, the data checks and the live machinery are tested; the
+> strategy has not yet shown an edge. `swing benchmark` puts it next to
+> buy-and-hold and plain monthly momentum on the same data, and nothing should
+> go live until it beats both out of sample.
+
 ---
 
 ## What it does
@@ -30,7 +38,7 @@ swing plan
 ```markdown
 ## 1. Exits - place at market on open
 | Symbol | Qty | Approx value | Why |
-| LTIM   |   9 | Rs 15,924.15 | time_stop (held 48 sessions, -0.08R) |
+| LTM    |   9 | Rs 15,924.15 | time_stop (held 48 sessions, -0.08R) |
 
 ## 2. Stop updates - modify the existing GTT
 | Symbol     | Qty | New trigger  | Change |
@@ -92,6 +100,7 @@ python3 -m pip install -e .          # optional: lets you type `swing` instead o
 swing fetch --start 2014-01-01       # ~10 minutes
 swing validate-data                  # do not skip this
 swing backtest --report runs/baseline.html
+swing benchmark                      # what it has to beat, same period, same costs
 swing walkforward
 swing live parity --sessions 120
 ```
@@ -108,7 +117,8 @@ command or `python3 swing <command>` run from the repository folder.
 | `swing bundle` | Export/import the price cache to move it between machines |
 | `swing doctor` | Check config and data for problems before they cost money |
 | `swing costs` | What frictions actually cost at your position size |
-| `swing backtest` | One backtest plus a self-contained HTML report |
+| `swing backtest` | One backtest plus a self-contained HTML report, and where the result comes from |
+| `swing benchmark` | The same period as Nifty 100 buy-and-hold and plain monthly momentum |
 | `swing walkforward` | Evaluate the current config out of sample, fold by fold |
 | `swing learn` | Search parameters per fold, gate the result, maybe promote |
 | `swing scan` | Rank the universe as of the latest session |
@@ -180,10 +190,10 @@ backtest until the thing being traded is not the thing that was validated —
 
 **Costs are modelled properly, because at ₹1 lakh they decide everything.** A
 round trip on a ₹17,000 position costs 0.84%, of which a flat ₹23.60 DP charge
-is 0.14% on its own. Measured on this system, costs take about **0.18R per
+is 0.14% on its own. Measured on this system, costs take about **0.2R per
 trade**: at the original fast-turnover settings that turned **+0.09R gross into
-−0.08R net**, and at the shipped low-turnover settings they still take two
-thirds of it (**+0.29R → +0.10R**). That measurement is why the defaults hold
+−0.12R net**, and at the shipped low-turnover settings they still take three
+quarters of it (**+0.29R → +0.07R**). That measurement is why the defaults hold
 positions for weeks rather than days. Run `swing costs`.
 
 **Vendor data is checked before it is trusted.** `swing validate-data` looks for
@@ -200,7 +210,7 @@ so loudly. `swing learn` refuses outright to promote a champion fitted on it.
 ## Tests
 
 ```bash
-python -m pytest tests/ -q                  # 173 tests, ~70 s
+python -m pytest tests/ -q                  # 188 tests, ~80 s
 python -m pytest tests/ -q -m "not slow"    # skip the end-to-end parity replay
 ```
 
@@ -212,22 +222,24 @@ data), and the learning machinery's refusal to promote noise.
 
 ## Status and honest caveats
 
-This is a complete, tested implementation. It has **not** been validated on real
-market data, and the Groww adapter has **not** been run against the real API —
-the environment it was built in could reach neither, so every number quoted
-above comes from synthetic data or from closed-form cost arithmetic, and the
-broker adapter was built against the SDK's source and tested against a
-stand-in. [LIVE.md](docs/LIVE.md) lists exactly what that leaves unverified.
+The machinery is complete and tested. The strategy has been run on real market
+data once, on the owner's machine, and it lost money (the status note at the
+top). The Groww adapter has **not** been run against the real API — the
+environment it was built in could reach neither Groww nor a market-data vendor,
+so the other numbers quoted above come from synthetic data or from closed-form
+cost arithmetic, and the broker adapter was built against the SDK's source and
+tested against a stand-in. [LIVE.md](docs/LIVE.md) lists exactly what that
+leaves unverified.
 
-Two engine bugs were found and fixed while building the live layer, and both
-moved earlier numbers. Opening fills were capped using a regime computed from
-that same day's close — a same-day lookahead the truncation test could not see,
-which on the synthetic data inflated per-trade expectancy about 4.5×. And
-slippage was charged twice (1.08% per round trip instead of 0.84%), which made
-results too pessimistic. Both now have regression tests; the figures above are
-from the corrected engine. Validating it on real Nifty 100 history is the
-first thing you should do, and `swing fetch` followed by `swing walkforward` is
-how.
+Three engine bugs have been found and fixed, and each moved earlier numbers.
+Opening fills were capped using a regime computed from that same day's close —
+a same-day lookahead the truncation test could not see, which on the synthetic
+data inflated per-trade expectancy about 4.5×. Slippage was charged twice
+(1.08% per round trip instead of 0.84%), which made results too pessimistic.
+And each trade's net P&L deducted only its exit charges, so win rate, profit
+factor and expectancy in R were flattered by the buy-side charges (the equity
+curve and CAGR were right). All three have regression tests; the figures above
+are from the corrected engine.
 
 Other things you should know before risking money:
 

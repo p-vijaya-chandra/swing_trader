@@ -64,3 +64,32 @@ def test_report_is_self_contained_and_flags_synthetic(tmp_path, cfg, result, dat
 def test_sparkline_is_bounded(result):
     s = equity_sparkline(result.equity_curve, width=60)
     assert 0 < len(s) <= 80
+
+
+def test_breakdown_adds_up(cfg, dataset):
+    """Each group's rows must partition the trades: counts and rupees sum to the
+    'all' line, and the 'all' line's net R is the backtest's expectancy."""
+    from swingtrader.reporting import breakdown_lines
+    res = run_backtest(cfg, dataset, start="2016-01-01")
+    lines = breakdown_lines(res.trades)
+
+    def cells(line):
+        parts = line.split()
+        return int(parts[-6]), float(parts[-2]), int(parts[-1].replace(",", ""))
+
+    n_all, r_all, rs_all = cells(lines[1])
+    m = compute_metrics(res.dates, res.equity_curve, res.trades, res.costs_total)
+    assert n_all == len(res.trades)
+    assert r_all == pytest.approx(m["expectancy_r"], abs=0.006)
+    assert abs(rs_all - sum(t.net_pnl for t in res.trades)) <= 1
+    groups, cur = [], None
+    for line in lines[2:]:
+        if line.startswith("    "):
+            cur.append(cells(line))
+        else:
+            cur = []
+            groups.append(cur)
+    assert len(groups) == 4
+    for g in groups:
+        assert sum(c[0] for c in g) == n_all
+        assert abs(sum(c[2] for c in g) - rs_all) <= len(g)

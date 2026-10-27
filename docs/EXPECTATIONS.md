@@ -78,9 +78,9 @@ To net 152% a year while turning the book over twice a month, you must gross
 
 This is measurable, not theoretical. On this system's own test runs at the
 original fast-turnover settings, the gross edge before costs was **+0.09R per
-trade** and the net edge after costs was **−0.08R**: costs consumed the entire
-edge and more. Even at the shipped low-turnover settings they take about two
-thirds of it (+0.29R gross, +0.10R net). That measurement is why the shipped
+trade** and the net edge after costs was **−0.12R**: costs consumed the entire
+edge and more. Even at the shipped low-turnover settings they take about three
+quarters of it (+0.29R gross, +0.07R net). That measurement is why the shipped
 configuration holds positions for weeks rather than days — see
 [SYSTEM.md](SYSTEM.md).
 

@@ -38,6 +38,50 @@ def monthly_table_text(monthly: Dict[str, float]) -> List[str]:
     return out
 
 
+def breakdown_lines(trades: Sequence) -> List[str]:
+    """Where a backtest's result comes from, in R per trade.
+
+    gross R  : the price move captured, after slippage, before charges
+    costs R  : brokerage, STT, stamp, exchange, GST, DP - in units of the risk taken
+    net R    : what the trade actually made
+
+    Read it in this order. If gross R is negative the signals are wrong and no
+    amount of cost-cutting will help. If gross is positive and net negative,
+    turnover is the problem. Then look for the row that does the damage.
+    """
+    def risk(t):
+        return t.risk_per_share * t.qty
+
+    rows = [t for t in trades if risk(t) > 0]
+    if not rows:
+        return ["(no closed trades)"]
+
+    def line(label, ts):
+        n = len(ts)
+        g = sum(t.gross_pnl / risk(t) for t in ts) / n
+        c = sum(t.costs / risk(t) for t in ts) / n
+        net = sum(t.net_pnl / risk(t) for t in ts) / n
+        win = sum(1 for t in ts if t.net_pnl > 0) / n
+        rs = sum(t.net_pnl for t in ts)
+        return (f"  {label:26s} {n:6d} {100*win:5.0f}% {g:+8.2f} {-c:+8.2f} {net:+8.2f} "
+                f"{fmt_inr(round(rs))[:-3]:>12s}")
+
+    out = [f"  {'':26s} {'trades':>6s} {'win':>6s} {'gross R':>8s} {'costs R':>8s} "
+           f"{'net R':>8s} {'net Rs':>12s}", line("all", rows)]
+    groups = (("setup", lambda t: t.setup or "?"),
+              ("exit", lambda t: t.exit_reason),
+              ("regime at entry", lambda t: t.regime_at_entry or "?"),
+              ("year of entry", lambda t: t.entry_date[:4]))
+    for title, key in groups:
+        out.append(f"  {title}")
+        buckets: Dict[str, List] = {}
+        for t in rows:
+            buckets.setdefault(key(t), []).append(t)
+        for k in sorted(buckets):
+            out.append(line("  " + k, buckets[k]))
+    return out
+
+
 def _svg_path(values: Sequence[float], w: int, h: int, pad: int,
               log: bool = False) -> str:
     import math

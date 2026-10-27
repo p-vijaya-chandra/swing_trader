@@ -1,3 +1,3 @@
-from .report import write_report, monthly_table_text, equity_sparkline
+from .report import breakdown_lines, write_report, monthly_table_text, equity_sparkline
 
-__all__ = ["write_report", "monthly_table_text", "equity_sparkline"]
+__all__ = ["breakdown_lines", "write_report", "monthly_table_text", "equity_sparkline"]

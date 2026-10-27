@@ -149,8 +149,8 @@ Running the same strategy with and without costs (synthetic data, 2016-2025):
 | | Fast turnover (original) | Low turnover (shipped) |
 |---|---:|---:|
 | Gross, before costs | +0.09R | +0.29R |
-| Net, after real costs | **−0.08R** | **+0.10R** |
-| Cost drag per trade | 0.18R | 0.19R |
+| Net, after real costs | **−0.12R** | **+0.07R** |
+| Cost drag per trade | 0.21R | 0.22R |
 | Trades | 441 | 153 |
 
 At fast turnover, costs consumed the entire edge; slowing down is what leaves
