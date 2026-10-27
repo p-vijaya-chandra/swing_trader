@@ -881,8 +881,14 @@ def _groww(cfg: Config):
     from .broker.groww import GrowwBroker
     if importlib.util.find_spec("growwapi") is None:
         raise SystemExit("growwapi is not installed: pip install growwapi")
+    from .broker.base import BrokerError
     b = GrowwBroker(cfg)
-    b.connect()
+    try:
+        b.connect()
+    except BrokerError as exc:
+        raise SystemExit(f"Could not log in to Groww: {exc}\n"
+                         f"Set the credentials described in deploy/swingtrader.env.example "
+                         f"(TOTP key: GROWW_API_KEY + GROWW_TOTP_SECRET).")
     return b
 
 
@@ -1254,6 +1260,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     except FileNotFoundError as exc:
         print(f"error: {exc}")
         return 2
+    except Exception as exc:                            # noqa: BLE001
+        from .broker.base import BrokerError
+        if isinstance(exc, BrokerError):
+            print(f"broker error: {exc}")
+            return 2
+        raise
 
 
 if __name__ == "__main__":

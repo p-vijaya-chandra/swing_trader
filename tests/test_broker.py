@@ -380,3 +380,19 @@ def test_groww_falls_back_to_a_day_stop_when_gtt_is_refused():
     assert kw["order_type"] == SL_M and kw["transaction_type"] == SELL
     assert kw["trigger_price"] == 95.0
 
+
+
+def test_missing_credentials_give_a_clean_message_not_a_traceback(monkeypatch, capsys):
+    import sys
+    import types
+    from swingtrader import cli
+    import importlib.machinery
+    fake = types.ModuleType("growwapi")
+    fake.__spec__ = importlib.machinery.ModuleSpec("growwapi", None)
+    fake.GrowwAPI = object
+    monkeypatch.setitem(sys.modules, "growwapi", fake)
+    for k in ("GROWW_API_KEY", "GROWW_TOTP_SECRET", "GROWW_API_SECRET", "GROWW_ACCESS_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    with pytest.raises(SystemExit) as e:
+        cli._groww(Config())
+    assert "GROWW_API_KEY" in str(e.value) and "GROWW_TOTP_SECRET" in str(e.value)

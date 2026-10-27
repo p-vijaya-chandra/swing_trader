@@ -60,20 +60,28 @@ Full reasoning, including what is deliberately absent: **[docs/SYSTEM.md](docs/S
 
 ## Quick start
 
+Needs Python 3.9 or newer. On Windows, type `python` where this says `python3`.
+
 ```bash
-pip install -r requirements.txt      # only needed to DOWNLOAD data
-export PYTHONPATH=src
+git clone https://github.com/p-vijaya-chandra/swing_trader.git
+cd swing_trader
 
-# see it run end to end on generated data, no download required
-swing backtest --synthetic --report runs/demo.html
+# 1. see it run end to end on generated data - no installs, no download
+python3 swing backtest --synthetic --report runs/demo.html
+python3 swing live replay --synthetic --days 20
 
-# then the real thing
-swing doctor
-swing fetch --start 2014-01-01
+# 2. the real thing (needs internet access to Yahoo Finance)
+python3 -m pip install -r requirements.txt
+python3 -m pip install -e .          # optional: lets you type `swing` instead of `python3 swing`
+swing fetch --start 2014-01-01       # ~10 minutes
 swing validate-data                  # do not skip this
 swing backtest --report runs/baseline.html
 swing walkforward
+swing live parity --sessions 120
 ```
+
+Everywhere else in these docs, `swing <command>` means either the installed
+command or `python3 swing <command>` run from the repository folder.
 
 ## Commands
 
@@ -176,7 +184,7 @@ so loudly. `swing learn` refuses outright to promote a champion fitted on it.
 ## Tests
 
 ```bash
-python -m pytest tests/ -q                  # 172 tests, ~70 s
+python -m pytest tests/ -q                  # 173 tests, ~70 s
 python -m pytest tests/ -q -m "not slow"    # skip the end-to-end parity replay
 ```
 
