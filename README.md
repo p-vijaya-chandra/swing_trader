@@ -176,7 +176,7 @@ so loudly. `swing learn` refuses outright to promote a champion fitted on it.
 ## Tests
 
 ```bash
-python -m pytest tests/ -q                  # 171 tests, ~70 s
+python -m pytest tests/ -q                  # 172 tests, ~70 s
 python -m pytest tests/ -q -m "not slow"    # skip the end-to-end parity replay
 ```
 

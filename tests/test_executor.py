@@ -317,6 +317,26 @@ def test_trailing_stops_only_ever_move_up(rig, dataset):
     assert p.stop == st.trigger          # the book adopts the higher broker-side level
 
 
+def test_stop_ratchet_is_sent_once_and_on_the_tick_grid(rig, dataset):
+    """Regression, found by replay: the executor compared the tick-rounded
+    trigger but sent the unrounded one, so the two never agreed and every pass
+    issued another modify - an endless stream of modify calls at the broker."""
+    i, sym = find(dataset, calm_open)
+    r = rig(i)
+    s, j = bar(r, sym)
+    hold(r, sym, 20, entry=s.open[j], stop=round_to_tick(s.open[j] * 0.95, 0.05, "up"))
+    start_day(r)
+    p = r.ex.book.get(sym)
+    level = p.stop * 1.013 + 0.0123          # off-grid, as a trailing calculation produces
+    p.stop = level
+    for _ in range(3):
+        r.ex.ensure_stops()
+    trig = r.broker.get_stop(r.ex._stop_obj(p)).trigger
+    assert trig == round_to_tick(level, 0.05, "up")
+    assert len(events(r, "stop_modified", sym)) == 1, "modified once, not on every pass"
+    assert not any("could not move stop" in a for a in r.ex.notify.sent)
+
+
 # ---------------------------------------------------- reconciliation & safety
 def test_position_sold_by_hand_is_reconciled_without_new_orders(rig, dataset):
     i, sym = find(dataset, calm_open)
