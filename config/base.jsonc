@@ -17,7 +17,10 @@
     // constituents, and pretending otherwise would make the backtest fiction.
     "max_price_frac_of_equity": 0.22,
     "min_turnover_cr": 25.0,        // 20-day median traded value, Rs crore
-    "min_history_bars": 260
+    "min_history_bars": 260,
+    // Symbols to leave out, one per line. `swing validate-data --write-exclusions`
+    // writes this file for you; you can also edit it by hand.
+    "exclude_file": "state/excluded.txt"
   },
 
   // ---------------------------------------------------------------- REGIME

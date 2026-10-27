@@ -103,7 +103,8 @@ def _near_split_ratio(r: float, tol: float = 0.04) -> Optional[float]:
 def check_symbol(symbol: str, series, index_returns: Dict[str, float],
                  index_dates: Sequence[str], min_bars: int = 260,
                  max_last_date: str = "", stale_run: int = 5,
-                 jump_pct: float = 0.35, detect_splits: bool = True) -> List[Issue]:
+                 jump_pct: float = 0.35, detect_splits: bool = True,
+                 check_volume: bool = True) -> List[Issue]:
     out: List[Issue] = []
     n = len(series)
     c = series.close
@@ -161,7 +162,12 @@ def check_symbol(symbol: str, series, index_returns: Dict[str, float],
         # a corporate action or a bad print - not a market event.
         idx_quiet = idx_r is not None and abs(idx_r) < 0.05
         target = _near_split_ratio(r)
-        if target is not None and (idx_quiet or idx_r is None):
+        # Only a DROP can be an unadjusted split, bonus or demerger: the vendor
+        # left the old, higher prices in place. A jump UP onto a "split ratio"
+        # is almost always a real event - PNB rose 46% on 2017-10-25, the day
+        # PSU bank recapitalisation was announced - so it is a warning to look
+        # at, never an error that drops the stock.
+        if target is not None and r < 1.0 and (idx_quiet or idx_r is None):
             splits.append((d, r, target))
         else:
             prints_.append((d, r))
@@ -178,8 +184,8 @@ def check_symbol(symbol: str, series, index_returns: Dict[str, float],
     if prints_:
         out.append(Issue(
             symbol, "extreme_move", WARN,
-            f"{len(prints_)} day(s) moving more than {100*jump_pct:.0f}% that do not "
-            f"match a split ratio - verify against the exchange before trusting them",
+            f"{len(prints_)} day(s) moving more than {100*jump_pct:.0f}% - usually real "
+            f"news (a surge, a crash), occasionally a bad print; worth a look",
             [d for d, _ in prints_[:6]]))
 
     # ---- frozen bars -------------------------------------------------------
@@ -204,7 +210,8 @@ def check_symbol(symbol: str, series, index_returns: Dict[str, float],
                          [d for d, _ in runs[:6]]))
 
     # ---- volume ------------------------------------------------------------
-    zero_vol = [series.dates[i] for i in range(n) if series.volume[i] <= 0]
+    zero_vol = [series.dates[i] for i in range(n) if series.volume[i] <= 0] \
+        if check_volume else []
     if len(zero_vol) > max(5, 0.02 * n):
         out.append(Issue(symbol, "missing_volume", ERROR,
                          f"{len(zero_vol)} of {n} bars have no volume - the liquidity "
@@ -218,6 +225,37 @@ def check_symbol(symbol: str, series, index_returns: Dict[str, float],
         out.append(Issue(symbol, "non_positive_price", ERROR, "close <= 0 present"))
 
     return out
+
+
+def phantom_sessions(series_map: Dict[str, object], min_symbols: int = 20,
+                     frac: float = 0.8) -> List[str]:
+    """Dates on which most of the market shows zero volume.
+
+    No real NSE session has 80% of the Nifty 100 trading nothing. These are
+    exchange holidays (election days, unscheduled closures) that the vendor
+    filled with flat bars. Left in, every indicator counts them as sessions and
+    the engine may "trade" on a day the exchange was shut.
+    """
+    counts: Dict[str, List[int]] = {}
+    for s in series_map.values():
+        for d, v in zip(s.dates, s.volume):
+            c = counts.setdefault(d, [0, 0])
+            c[0] += 1
+            c[1] += 1 if v <= 0 else 0
+    return sorted(d for d, (n, z) in counts.items() if n >= min_symbols and z >= frac * n)
+
+
+def drop_dates(series, dates) -> object:
+    """A copy of `series` without the given dates."""
+    from .models import Series
+    bad = set(dates)
+    keep = [i for i, d in enumerate(series.dates) if d not in bad]
+    if len(keep) == len(series.dates):
+        return series
+    return Series(series.symbol, [series.dates[i] for i in keep],
+                  [series.open[i] for i in keep], [series.high[i] for i in keep],
+                  [series.low[i] for i in keep], [series.close[i] for i in keep],
+                  [series.volume[i] for i in keep])
 
 
 def index_return_map(index_series) -> Dict[str, float]:
@@ -237,6 +275,16 @@ def check_dataset(series_map: Dict[str, object], index_series, min_bars: int = 2
     rep.n_symbols = len(series_map)
     rep.index_present = index_series is not None and len(index_series) > 0
 
+    phantom = phantom_sessions(series_map)
+    if phantom:
+        rep.add(Issue("(market)", "phantom_sessions", INFO,
+                      f"{len(phantom)} date(s) where most of the market shows zero volume - "
+                      f"exchange holidays the vendor filled with flat bars. These are dropped "
+                      f"automatically whenever data is loaded.", phantom))
+        series_map = {k: drop_dates(v, phantom) for k, v in series_map.items()}
+        if rep.index_present:
+            index_series = drop_dates(index_series, phantom)
+
     index_dates = list(index_series.dates) if rep.index_present else []
     idx_ret = index_return_map(index_series)
     last_dates = [s.dates[-1] for s in series_map.values() if len(s)]
@@ -249,8 +297,11 @@ def check_dataset(series_map: Dict[str, object], index_series, min_bars: int = 2
                       "no index series cached. The regime filter is the main drawdown "
                       "control on a long-only book and it will be DISABLED without it."))
     else:
+        # Index volume is never used (the liquidity screen runs on stocks), and
+        # Yahoo's index series often carries none - so it is not checked.
         rep.add(*check_symbol("(index)", index_series, {}, [], min_bars=min_bars,
-                              max_last_date="", detect_splits=False))
+                              max_last_date="", detect_splits=False,
+                              check_volume=False))
 
     for sym in sorted(series_map):
         s = series_map[sym]

@@ -21,6 +21,7 @@ DEFAULTS: Dict[str, Any] = {
         "max_price_frac_of_equity": 0.22,   # skip names one share of which blows the position cap
         "min_turnover_cr": 25.0,            # 20d median traded value, in Rs crore
         "min_history_bars": 260,
+        "exclude_file": "state/excluded.txt",   # symbols to leave out, one per line
     },
 
     "regime": {

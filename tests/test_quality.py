@@ -182,3 +182,118 @@ def test_bad_symbols_lists_only_errors(sample, donor):
 def test_empty_series_does_not_crash():
     issues = check_symbol("X", Series("X", [], [], [], [], [], []), {}, [])
     assert issues and issues[0].kind == "empty"
+
+
+# ------------------------------------------- lessons from the first real data
+def test_an_up_surge_on_a_split_ratio_is_a_warning_not_an_error(sample, donor):
+    """Real data, 2017-10-25: PNB rose 46% when PSU bank recapitalisation was
+    announced, landing near a 3:2 ratio while the index barely moved. Only a
+    DROP can be an unadjusted split or bonus; an up-move is news until proven
+    otherwise and must not knock a stock out of the universe."""
+    from swingtrader.data.quality import _near_split_ratio
+    assert _near_split_ratio(1.46) == 1.5, "fixture must land on a split ratio"
+
+    def corrupt(d, clean, donor=donor):
+        r = rows(clean[donor])
+        mid = len(r) // 2
+        # scale so the jump-day close is EXACTLY 1.46x the prior close - scaling
+        # by a flat 1.46 would fold that day's natural return into the ratio
+        # and could miss the split-ratio branch this test exists to exercise
+        f = 1.46 * r[mid - 1][4] / r[mid][4]
+        for k in range(mid, len(r)):
+            for j in range(1, 5):
+                r[k][j] *= f
+        d["TARGET"] = Series.from_rows("TARGET", r)
+    rep = build(sample, corrupt)
+    assert "unadjusted_split" not in kinds(rep)
+    assert "extreme_move" in kinds(rep)
+    assert "TARGET" not in rep.bad_symbols()
+
+
+def test_index_volume_is_not_checked(sample):
+    """Yahoo's Nifty 100 series often has no volume, and the strategy never uses
+    index volume - so it must not raise an error on the index."""
+    clean, index = sample
+    idx = [list(r) for r in index.to_rows()]
+    for r in idx:
+        r[5] = 0
+    rep = check_dataset(clean, Series.from_rows("IDX", idx), min_bars=260)
+    assert not [i for i in rep.issues if i.symbol == "(index)" and i.kind == "missing_volume"]
+
+
+def _with_holiday(sample, date):
+    """Every stock gets a flat, zero-volume bar on `date` - the shape of the
+    election-day bars Yahoo inserted on 2014-04-24 and 2014-10-15."""
+    clean, index = sample
+    out = {}
+    for k, v in clean.items():
+        r = [list(x) for x in v.to_rows()]
+        for x in r:
+            if x[0] == date:
+                x[5] = 0
+        out[k] = Series.from_rows(k, r)
+    return out, index
+
+
+def test_vendor_filled_holidays_are_reported_once_not_per_symbol(sample):
+    clean, index = sample
+    day = sorted(next(iter(clean.values())).dates)[400]
+    series, idx = _with_holiday(sample, day)
+    from swingtrader.data.quality import phantom_sessions
+    # needs 20+ symbols to call it market-wide; widen the sample by copying
+    wide = {f"{k}{n}": v for n in range(2) for k, v in series.items()}
+    assert phantom_sessions(wide) == [day]
+    rep = check_dataset(wide, idx, min_bars=260)
+    assert [i.kind for i in rep.issues if i.symbol == "(market)"] == ["phantom_sessions"]
+    assert not [i for i in rep.issues if i.kind == "missing_volume"], \
+        "a market holiday must not produce a missing-volume warning per symbol"
+
+
+def test_one_stock_with_zero_volume_is_not_a_holiday(sample, donor):
+    from swingtrader.data.quality import phantom_sessions
+    clean, _ = sample
+    wide = {f"{k}{n}": v for n in range(2) for k, v in clean.items()}
+    r = rows(clean[donor])
+    r[400][5] = 0
+    wide["TARGET"] = Series.from_rows("TARGET", r)
+    assert phantom_sessions(wide) == []
+
+
+def _cache(tmp_path, cfg, series_map, index):
+    from swingtrader.data.store import DataStore
+    store = DataStore(str(tmp_path / "cache"))
+    for s in series_map.values():
+        store.save(s)
+    store.save(Series.from_rows(cfg.get("regime.index_symbol"), index.to_rows()))
+    return cfg.with_overrides({"data.cache_dir": str(tmp_path / "cache"),
+                               "universe.exclude_file": str(tmp_path / "excluded.txt")})
+
+
+def test_loader_drops_vendor_filled_holidays(tmp_path, cfg, dataset):
+    from swingtrader.runtime import Dataset
+    syms = sorted(dataset.series)[:30]
+    day = dataset.series[syms[0]].dates[500]
+    series = {}
+    for k in syms:
+        r = [list(x) for x in dataset.series[k].to_rows()]
+        for x in r:
+            if x[0] == day:
+                x[5] = 0
+        series[k] = Series.from_rows(k, r)
+    c = _cache(tmp_path, cfg, series, dataset.index)
+    ds = Dataset.load(c)
+    assert all(day not in s.idx for s in ds.series.values())
+    assert day not in ds.index.idx
+
+
+def test_loader_honours_the_exclusions_file(tmp_path, cfg, dataset):
+    """Regression: validate-data told you to write state/excluded.txt, and
+    nothing ever read it - following its advice changed no backtest."""
+    from swingtrader.runtime import Dataset
+    syms = sorted(dataset.series)[:25]
+    c = _cache(tmp_path, cfg, {k: dataset.series[k] for k in syms}, dataset.index)
+    (tmp_path / "excluded.txt").write_text(
+        f"# symbols failing swing validate-data\n{syms[0]}\n{syms[1]}  # demerger\n")
+    ds = Dataset.load(c)
+    assert syms[0] not in ds.series and syms[1] not in ds.series
+    assert syms[2] in ds.series

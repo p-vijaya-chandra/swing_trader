@@ -9,6 +9,7 @@ stops, sizing, exit thresholds - reuses the cached bundle.
 from __future__ import annotations
 
 import csv
+import os
 from typing import Dict, List, Optional, Tuple
 
 from .config import Config
@@ -36,6 +37,20 @@ def load_universe(path: str) -> Tuple[List[str], Dict[str, str], Dict[str, str]]
             sectors[sym] = (row.get("sector") or "Other").strip()
             names[sym] = (row.get("name") or sym).strip()
     return symbols, sectors, names
+
+
+def read_exclusions(path: str) -> List[str]:
+    """Symbols to leave out, one per line; '#' starts a comment.
+    Written by `swing validate-data --write-exclusions`, editable by hand."""
+    if not path or not os.path.exists(path):
+        return []
+    out = []
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            s = line.split("#", 1)[0].strip()
+            if s:
+                out.append(s)
+    return out
 
 
 class Dataset:
@@ -68,6 +83,23 @@ class Dataset:
         store = DataStore(cfg.get("data.cache_dir", "data_cache"))
         series = store.load_many(symbols)
         index = store.load(index_sym)
+
+        excluded = read_exclusions(cfg.get("universe.exclude_file", ""))
+        dropped = sorted(s for s in excluded if s in series)
+        for s in dropped:
+            series.pop(s)
+        if dropped:
+            print(f"  data: excluded {len(dropped)} symbol(s) listed in "
+                  f"{cfg.get('universe.exclude_file')}: {', '.join(dropped)}")
+
+        from .data.quality import drop_dates, phantom_sessions
+        phantom = phantom_sessions(series)
+        if phantom:
+            series = {k: drop_dates(v, phantom) for k, v in series.items()}
+            if index is not None:
+                index = drop_dates(index, phantom)
+            print(f"  data: dropped {len(phantom)} vendor-filled holiday session(s) "
+                  f"({', '.join(phantom[:4])}{' ...' if len(phantom) > 4 else ''})")
         if not series:
             raise SystemExit(
                 f"No cached price data in '{store.cache_dir}'.\n"

@@ -195,8 +195,9 @@ def cmd_validate(args) -> int:
                         fh.write(b + "\n")
             print(f"Written to {args.write_exclusions}")
         else:
-            print("Fix them at the source, or drop them: "
-                  "`swing validate-data --write-exclusions state/excluded.txt`")
+            print("Fix them at the source, or leave them out of every backtest with:\n"
+                  f"  swing validate-data --write-exclusions "
+                  f"{cfg.get('universe.exclude_file', 'state/excluded.txt')}")
 
     print("\nWhy this matters: every defect above produces a plausible equity curve")
     print("rather than an error. An unadjusted bonus reads as a -50% day, stops out")

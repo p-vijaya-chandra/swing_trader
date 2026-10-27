@@ -17,7 +17,7 @@ MARUTI,Maruti Suzuki,Auto,NIFTY50
 SUNPHARMA,Sun Pharmaceutical,Pharma,NIFTY50
 NTPC,NTPC,Power,NIFTY50
 HCLTECH,HCL Technologies,IT,NIFTY50
-TATAMOTORS,Tata Motors,Auto,NIFTY50
+TMPV,Tata Motors Passenger Vehicles,Auto,NIFTY50
 ULTRACEMCO,UltraTech Cement,Cement,NIFTY50
 TITAN,Titan Company,Consumer,NIFTY50
 ASIANPAINT,Asian Paints,Consumer,NIFTY50
@@ -84,7 +84,7 @@ JSWENERGY,JSW Energy,Power,NEXT50
 JINDALSTEL,Jindal Steel & Power,Metals,NEXT50
 LICI,Life Insurance Corp,Financials,NEXT50
 LODHA,Macrotech Developers,Realty,NEXT50
-LTIM,LTIMindtree,IT,NEXT50
+LTM,LTM (formerly LTIMindtree),IT,NEXT50
 MOTHERSON,Samvardhana Motherson,Auto,NEXT50
 MARICO,Marico,FMCG,NEXT50
 MAXHEALTH,Max Healthcare,Healthcare,NEXT50
