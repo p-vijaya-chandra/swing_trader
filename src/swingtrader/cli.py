@@ -899,7 +899,8 @@ def cmd_live(args) -> int:
     if sub == "kill":
         state, _ = _live_paths(cfg, args.mode)
         os.makedirs(state, exist_ok=True)
-        open(os.path.join(state, "KILL"), "w").write(time.strftime("%Y-%m-%d %H:%M:%S"))
+        with open(os.path.join(state, "KILL"), "w", encoding="utf-8") as fh:
+            fh.write(time.strftime("%Y-%m-%d %H:%M:%S"))
         print(f"Kill switch ON ({state}/KILL). No new orders will be sent. Protective "
               f"stops already at the broker stay in place.")
         return 0

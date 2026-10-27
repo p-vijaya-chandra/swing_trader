@@ -60,7 +60,23 @@ Full reasoning, including what is deliberately absent: **[docs/SYSTEM.md](docs/S
 
 ## Quick start
 
-Needs Python 3.9 or newer. On Windows, type `python` where this says `python3`.
+Needs Python 3.9 or newer.
+
+**On Windows**, `python3` is a Microsoft Store shortcut, not Python - typing it
+prints "Python was not found". Install Python once, then use `py`:
+
+```bat
+winget install -e --id Python.Python.3.12
+:: close this window, open a new Command Prompt, then:
+cd swing_trader
+py swing backtest --synthetic --report runs\demo.html
+start runs\demo.html
+```
+
+Everywhere below, type `py` where it says `python3`. If `winget` is missing,
+use the installer from python.org and tick "Add python.exe to PATH".
+
+**On macOS / Linux:**
 
 ```bash
 git clone https://github.com/p-vijaya-chandra/swing_trader.git

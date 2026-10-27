@@ -1,0 +1,7 @@
+# Keep every text file LF on every platform. Git for Windows converts to CRLF
+# on checkout by default, and a CRLF launcher or shell script copied to a Linux
+# server fails outright ("/usr/bin/env: 'python3\r': No such file or directory").
+# Python, and every Windows editor since 2018, reads LF files fine.
+* text=auto eol=lf
+*.png binary
+*.gz binary
