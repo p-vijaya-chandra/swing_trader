@@ -189,6 +189,7 @@ def cmd_validate(args) -> int:
         print(f"\n{len(bad)} symbol(s) with errors: {', '.join(bad[:20])}"
               + (" ..." if len(bad) > 20 else ""))
         if args.write_exclusions:
+            os.makedirs(os.path.dirname(args.write_exclusions) or ".", exist_ok=True)
             with open(args.write_exclusions, "w", encoding="utf-8") as fh:
                 fh.write("# symbols failing swing validate-data\n")
                 for b in bad:

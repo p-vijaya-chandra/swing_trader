@@ -5,9 +5,8 @@ venv/
 .env
 data_cache/
 runs/
-state/*.json
+state/*
 !state/.gitkeep
 orders/
 *.egg-info/
-.pytest_cache/
 .pytest_cache/
