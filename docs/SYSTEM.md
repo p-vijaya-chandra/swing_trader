@@ -144,15 +144,17 @@ At ₹1 lakh with 6 positions, each position is ~₹17,000, and a round trip cos
 **0.84%**. The DP charge alone is a *flat* ₹23.60 per sell, which is 0.14% of
 that position by itself.
 
-Running the same strategy with and without costs:
+Running the same strategy with and without costs (synthetic data, 2016-2025):
 
-| | Expectancy per trade |
-|---|---:|
-| Gross, before costs | **+0.19R** |
-| Net, after real costs | **−0.07R** |
-| **Cost drag** | **0.25R per trade** |
+| | Fast turnover (original) | Low turnover (shipped) |
+|---|---:|---:|
+| Gross, before costs | +0.09R | +0.29R |
+| Net, after real costs | **−0.08R** | **+0.10R** |
+| Cost drag per trade | 0.18R | 0.19R |
+| Trades | 441 | 153 |
 
-Costs consumed the entire edge. And annually:
+At fast turnover, costs consumed the entire edge; slowing down is what leaves
+anything at all. And annually:
 
 | Turnover | Annual cost | % of capital |
 |---|---:|---:|
@@ -249,9 +251,11 @@ so months later "why is it trading like this?" has an answer.
   Indian fundamental data is expensive.
 - **No neural networks.** With ~40 trades a year, the sample cannot support them.
   The bottleneck is transaction costs and sample size, not model capacity.
-- **No auto-execution.** Groww retail API access is not something to assume, and
-  at ₹1 lakh the value of automation is small next to the cost of an unattended
-  bug. You get an order sheet; you place the orders.
+- **No intraday decisions.** The live executor ([LIVE.md](LIVE.md)) places
+  orders in real time, but every decision is still made on a daily close and
+  executed at the next open, exactly as backtested. Real-time execution is about
+  getting the validated fills reliably, not about trading more often - more
+  often is precisely what the cost table above forbids.
 
 ## Known limitations, stated plainly
 

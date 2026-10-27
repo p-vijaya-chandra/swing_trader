@@ -160,6 +160,40 @@ DEFAULTS: Dict[str, Any] = {
         "decay_alert_pct": 5.0,             # live expectancy under backtest 5th pct => alert
     },
 
+    "execution": {
+        # "paper" simulates fills; "live" sends real orders. Live ALSO needs the
+        # environment variable SWING_LIVE_CONFIRM=yes - two independent
+        # switches, so no single typo puts money on the line.
+        "mode": "paper",
+        "broker": "groww",
+        "stop_mode": "gtt",                 # broker-held GTT survives this process dying
+        "gtt_duration": "GTC",
+        "day_stop_fallback": True,          # same-day SL-M if a GTT is refused (e.g. T+0)
+        "schedule": {"prep": "08:50", "open": "09:15:05", "open_deadline": "09:45",
+                     "close": "15:31", "eod": "16:15", "eod_deadline": "23:00"},
+        "poll_s": 30,
+        "phase_retry_s": 60,
+        "entry_timeout_s": 300,             # backtest fills at the open or not at all
+        "entry_limit_buffer": 0.005,        # marketable limit, never a naked market buy
+        "exit_settle_s": 20,
+        "stop_grace_s": 90,                 # let the broker's stop act before the watchdog does
+        "emergency_tolerance": 0.003,
+        "tick_size": 0.05,
+        "skip_symbols_with_foreign_holdings": True,
+        "max_order_value_frac": 0.30,
+        "max_orders_per_day": 20,
+        "max_daily_buy_frac": 0.80,
+        "max_price_deviation": 0.05,
+        "max_quote_age_s": 180,
+        "canary_qty": 0,                    # e.g. 1 = every live order capped at 1 share
+        "api_timeout_s": 10,
+        "api_retries": 3,
+        "api_min_interval_s": 0.15,
+        "ltp_symbol_separator": "_",        # verify with `swing live probe`
+        "holiday_file": "config/nse_holidays.csv",
+        "notify_level": "warn",
+    },
+
     "data": {
         "cache_dir": "data_cache",
         "provider": "yfinance",

@@ -15,9 +15,12 @@ the arithmetic, not an opinion.
 
 ## What it does
 
-Every evening after the close it produces an order sheet: which positions to
-exit, which trailing stops to raise, and which new positions to open with exact
-quantities, limit prices and stop levels. You place those orders in Groww. It
+Every evening after the close it produces a plan: which positions to exit,
+which trailing stops to raise, and which new positions to open with exact
+quantities, limit prices and stop levels. Then either you place those orders in
+Groww by hand, or **the real-time executor places them itself** at the next
+open, keeps a protective stop at the broker for every position, and watches for
+those stops failing — see **[docs/LIVE.md](docs/LIVE.md)**. Either way it
 records what filled, and it learns from what happened.
 
 ```
@@ -88,8 +91,29 @@ swing walkforward
 | `swing plan` | Write tomorrow's order sheet |
 | `swing position` | Record fills, closes and stop changes |
 | `swing journal` | Attribution and edge-decay report over your real trades |
+| `swing live run` | Real-time executor: `--mode shadow` (Groww prices, simulated fills) or `--mode live` |
+| `swing live replay` / `parity` | Run the live executor over history; check it trades what the backtest measured |
+| `swing live probe` | Read-only check that every Groww endpoint parses |
+| `swing live status` / `kill` / `flatten` | Watch it, freeze it, or sell everything |
 
 Day-to-day routine: **[docs/OPERATIONS.md](docs/OPERATIONS.md)**
+
+## Real-time execution
+
+`swing live run` is a daemon that runs the trading day: re-login and reconcile
+before the open, exits then entries at 09:15, a GTT stop at the broker for every
+position (it survives this process dying), a watchdog behind those stops,
+and tomorrow's plan at 16:15. Every order is written to disk before it is sent
+and carries a deterministic reference, so a crash or a timeout never produces
+a duplicate. Real money needs two independent switches, and the rollout runs
+replay → API probe → **shadow mode** (live prices, simulated fills) → a
+one-share canary → full size.
+
+It still decides on the daily close and executes at the next open, exactly as
+backtested: replayed over 121 sessions it reproduces the backtest's trades
+(14/14 entries, 9/9 exit dates, equity within 0.03%). It has to run on a
+machine with a static IP whitelisted with Groww — a SEBI requirement for API
+orders since April 2026. Full guide: **[docs/LIVE.md](docs/LIVE.md)**.
 
 ## What "self-improving" means here
 
@@ -132,9 +156,11 @@ backtest until the thing being traded is not the thing that was validated —
 
 **Costs are modelled properly, because at ₹1 lakh they decide everything.** A
 round trip on a ₹17,000 position costs 0.84%, of which a flat ₹23.60 DP charge
-is 0.14% on its own. Measured on this system: **+0.19R per trade gross, −0.07R
-net.** Costs consumed the entire edge. That single measurement is why the
-defaults hold positions for weeks rather than days. Run `swing costs`.
+is 0.14% on its own. Measured on this system, costs take about **0.18R per
+trade**: at the original fast-turnover settings that turned **+0.09R gross into
+−0.08R net**, and at the shipped low-turnover settings they still take two
+thirds of it (**+0.29R → +0.10R**). That measurement is why the defaults hold
+positions for weeks rather than days. Run `swing costs`.
 
 **Vendor data is checked before it is trusted.** `swing validate-data` looks for
 the defects that produce a plausible equity curve rather than an error:
@@ -150,7 +176,8 @@ so loudly. `swing learn` refuses outright to promote a champion fitted on it.
 ## Tests
 
 ```bash
-python -m pytest tests/ -q      # 116 tests
+python -m pytest tests/ -q                  # 171 tests, ~70 s
+python -m pytest tests/ -q -m "not slow"    # skip the end-to-end parity replay
 ```
 
 Covering indicator correctness against naive implementations, the no-lookahead
@@ -162,9 +189,19 @@ data), and the learning machinery's refusal to promote noise.
 ## Status and honest caveats
 
 This is a complete, tested implementation. It has **not** been validated on real
-market data — the environment it was built in has no access to market data
-providers, so every number quoted above comes from synthetic data or from
-closed-form cost arithmetic. Validating it on real Nifty 100 history is the
+market data, and the Groww adapter has **not** been run against the real API —
+the environment it was built in could reach neither, so every number quoted
+above comes from synthetic data or from closed-form cost arithmetic, and the
+broker adapter was built against the SDK's source and tested against a
+stand-in. [LIVE.md](docs/LIVE.md) lists exactly what that leaves unverified.
+
+Two engine bugs were found and fixed while building the live layer, and both
+moved earlier numbers. Opening fills were capped using a regime computed from
+that same day's close — a same-day lookahead the truncation test could not see,
+which on the synthetic data inflated per-trade expectancy about 4.5×. And
+slippage was charged twice (1.08% per round trip instead of 0.84%), which made
+results too pessimistic. Both now have regression tests; the figures above are
+from the corrected engine. Validating it on real Nifty 100 history is the
 first thing you should do, and `swing fetch` followed by `swing walkforward` is
 how.
 

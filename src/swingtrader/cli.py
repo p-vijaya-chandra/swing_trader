@@ -11,6 +11,7 @@
     swing journal     attribution and edge-decay report over your real trades
     swing costs       what frictions actually cost at your position size
     swing doctor      check the setup and the data for problems
+    swing live        real-time execution: replay, parity, shadow, live
 """
 from __future__ import annotations
 
@@ -867,6 +868,226 @@ def cmd_doctor(args) -> int:
     return 1 if problems else 0
 
 
+# ----------------------------------------------------------------------- live
+def _live_paths(cfg: Config, mode: str) -> tuple:
+    base = cfg.get("paths.state_dir", "state")
+    state = os.path.join(base, mode)
+    orders = os.path.join(cfg.get("paths.orders_dir", "orders"), mode)
+    return state, orders
+
+
+def _groww(cfg: Config):
+    import importlib.util
+    from .broker.groww import GrowwBroker
+    if importlib.util.find_spec("growwapi") is None:
+        raise SystemExit("growwapi is not installed: pip install growwapi")
+    b = GrowwBroker(cfg)
+    b.connect()
+    return b
+
+
+def cmd_live(args) -> int:
+    cfg = _cfg(args)
+    sub = args.live_cmd
+
+    if sub == "kill":
+        state, _ = _live_paths(cfg, args.mode)
+        os.makedirs(state, exist_ok=True)
+        open(os.path.join(state, "KILL"), "w").write(time.strftime("%Y-%m-%d %H:%M:%S"))
+        print(f"Kill switch ON ({state}/KILL). No new orders will be sent. Protective "
+              f"stops already at the broker stay in place.")
+        return 0
+    if sub == "resume":
+        state, _ = _live_paths(cfg, args.mode)
+        k = os.path.join(state, "KILL")
+        if os.path.exists(k):
+            os.remove(k)
+            print("Kill switch OFF.")
+        else:
+            print("Kill switch was not on.")
+        return 0
+
+    if sub == "status":
+        state, _ = _live_paths(cfg, args.mode)
+        for name in ("heartbeat.json", "live_state.json", "positions.json"):
+            path = os.path.join(state, name)
+            if not os.path.exists(path):
+                print(f"{name}: (none)")
+                continue
+            with open(path, encoding="utf-8") as fh:
+                d = json.load(fh)
+            if name == "heartbeat.json":
+                age = time.time() - float(d.get("wall", 0))
+                print(f"heartbeat: {d.get('ts')} ({age:.0f}s ago){'  <-- STALE' if age > 300 else ''}"
+                      f"  session {d.get('session')} done {d.get('done')}")
+            elif name == "live_state.json":
+                print(f"session {d.get('session')}  phases {d.get('done')}  "
+                      f"blocked: {d.get('blocked') or '-'}  last plan {d.get('last_plan')}")
+                pend = [e['symbol'] for e in d.get('entries', {}).values()
+                        if e.get('state') in ('placing', 'working', 'unknown')]
+                print(f"pending entries {pend or '-'}  foreign holdings {sorted(d.get('foreign', {})) or '-'}")
+            else:
+                print(f"cash {d.get('cash', 0):,.0f}  halted {d.get('halted')}  "
+                      f"positions {len(d.get('positions', []))}")
+                for pos in d.get("positions", []):
+                    flag = "" if pos.get("stop_id") else "   <-- NO BROKER STOP"
+                    print(f"  {pos['symbol']:12s} {pos['qty']:5d} @ {pos['entry_price']:9.2f}  "
+                          f"stop {pos['stop']:9.2f}  since {pos['entry_date']}{flag}")
+        print(f"kill switch: {'ON' if os.path.exists(os.path.join(state, 'KILL')) else 'off'}")
+        alerts = os.path.join(state, "alerts.log")
+        if os.path.exists(alerts):
+            tail = open(alerts, encoding="utf-8").read().strip().splitlines()[-5:]
+            print("recent alerts:" if tail else "")
+            for line in tail:
+                print("  " + line)
+        return 0
+
+    if sub == "probe":
+        b = _groww(cfg)
+        rep = b.probe(args.symbols or ("RELIANCE", "INFY"))
+        state, _ = _live_paths(cfg, "live")
+        os.makedirs(os.path.join(state, "probe"), exist_ok=True)
+        path = os.path.join(state, "probe", time.strftime("%Y%m%d-%H%M%S") + ".json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(rep, fh, indent=1, default=str)
+        print("Read-only probe of the Groww API (no orders placed)\n")
+        for name in ("holdings", "margin", "ltp", "orders", "gtt"):
+            if name in rep["errors"] or name + "_parse" in rep["errors"]:
+                err = rep["errors"].get(name) or rep["errors"].get(name + "_parse")
+                print(f"  FAIL  {name:9s} {err}")
+            else:
+                print(f"  ok    {name:9s} parsed: {rep['parsed'].get(name, '(raw only)')}")
+        print(f"\nRaw responses saved to {path}. If anything FAILed, the field names "
+              f"differ from what the adapter expects - fix broker/groww.py before "
+              f"going live.")
+        return 1 if rep["errors"] else 0
+
+    if sub == "replay":
+        from .realtime import build_replay, IST
+        import datetime as dt
+        ds = _dataset(cfg, args)
+        dates = ds.all_dates()
+        start = args.start or dates[max(0, len(dates) - args.days - 1)]
+        if start not in dates:
+            start = next((d for d in dates if d >= start), dates[-1])
+        i = dates.index(start)
+        end = dates[min(len(dates) - 1, i + args.days - 1)]
+        work = args.out or os.path.join(cfg.get("paths.runs_dir", "runs"),
+                                        "replay-" + time.strftime("%Y%m%d-%H%M%S"))
+        print(f"Replaying {start} .. {end} through the live executor (paper broker, "
+              f"simulated clock) into {work}\n")
+        daemon, ex, broker, clock = build_replay(cfg, ds, dt.date.fromisoformat(start),
+                                                 os.path.join(work, "state"),
+                                                 os.path.join(work, "orders"),
+                                                 echo=not args.quiet)
+        daemon.run(until=dt.datetime.combine(dt.date.fromisoformat(end), dt.time(17, 0),
+                                             tzinfo=IST))
+        st = ex.status()
+        print(f"\nEquity {ex.equity(end):,.0f}  cash {st['cash']:,.0f}  "
+              f"open positions {len(st['positions'])}  journal {ex.journal_path}")
+        if ds.synthetic:
+            print(f"\n*** {SYNTHETIC_WARNING} ***")
+        return 0
+
+    if sub == "parity":
+        from .realtime.parity import compare, summary_lines
+        ds = _dataset(cfg, args)
+        dates = ds.all_dates()
+        first = max(260, len(dates) - args.sessions - 1) if args.first is None else args.first
+        last = min(len(dates) - 1, first + args.sessions - 1)
+        work = args.out or os.path.join(cfg.get("paths.runs_dir", "runs"),
+                                        "parity-" + time.strftime("%Y%m%d-%H%M%S"))
+        print(f"Running the live executor and the backtest over the same "
+              f"{last - first + 1} sessions...\n")
+        r = compare(cfg, ds, first, last, work)
+        print("\n".join(summary_lines(r)))
+        ok = not r["only_live"] and not r["only_backtest"]
+        print("\nPARITY " + ("OK - the live system trades what the backtest measured"
+                             if ok else "DIVERGES - investigate before trusting either"))
+        return 0 if ok else 1
+
+    if sub in ("run", "flatten"):
+        import signal
+        from .realtime import build_executor, build_live
+        from .realtime.clock import RealClock
+        from .realtime.market import CacheMarket
+        from .realtime.calendar import TradingCalendar
+        symbols, _, _ = load_universe(cfg.get("universe.file"))
+        mode = args.mode
+        state, orders = _live_paths(cfg, mode)
+        cal = TradingCalendar(cfg.get("execution.holiday_file"))
+        year = time.localtime().tm_year
+        if mode in ("live", "shadow") and not cal.covers(year):
+            print(f"Refusing to start: {cfg.get('execution.holiday_file')} lists no "
+                  f"holidays for {year}. Add NSE's published list first - on a holiday "
+                  f"an order can be queued and filled at the next session's open.")
+            return 2
+        groww = _groww(cfg)
+        if mode == "live":
+            from .realtime.guard import RiskGuard
+            gate = RiskGuard(cfg, state, RealClock()).live_allowed()
+            if not gate.ok:
+                print(f"Refusing to trade real money: {gate.reason}.\n"
+                      f"Live needs BOTH execution.mode = \"live\" in the config AND "
+                      f"SWING_LIVE_CONFIRM=yes in the environment.")
+                return 2
+            broker = groww
+        else:
+            from .broker.paper import PaperBroker
+            clock = RealClock()
+            broker = PaperBroker(groww.quotes, clock, CostModel(cfg),
+                                 cash=float(cfg.get("capital", 100000.0)),
+                                 state_path=os.path.join(state, "paper_broker.json"),
+                                 tick_size=float(cfg.get("execution.tick_size", 0.05)))
+        if sub == "flatten":
+            if not args.yes_sell_everything:
+                print("This cancels every protective stop and sells every position at "
+                      "market. Re-run with --yes-sell-everything to do it.")
+                return 2
+            clock = RealClock()
+            ex = build_executor(cfg, broker, clock, CacheMarket(cfg), state, orders,
+                                universe=symbols)
+            for p in list(ex.book.positions):
+                ex._exit(p, "manual_flatten", emergency=True)
+            ex.broker.tick()
+            ex._sync_exits()
+            print(json.dumps(ex.status(), indent=1, default=str))
+            return 0
+
+        daemon, ex, clock, _ = build_live(cfg, broker, state, orders, symbols)
+        if bool(cfg.get("learn.meta_label.enabled", False)):
+            from .learn.metalabel import MetaLabeler
+            ml = MetaLabeler.load(os.path.join(cfg.get("paths.state_dir", "state"),
+                                               "metalabel.json"))
+            if ml and ml.weights:
+                ex.entry_filter = ml.as_entry_filter(
+                    float(cfg.get("learn.meta_label.threshold", 0.5)))
+                print(f"  meta-label filter active (trained on {ml.n_train} trades)")
+        def stop(signum, frame):                                # noqa: ARG001
+            print("\nshutting down after the current step...")
+            clock.interrupt()
+        signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGINT, stop)
+        e = cfg.get("execution", {})
+        print("=" * 72)
+        print(f"  swingtrader {mode.upper()}  -  "
+              f"{'REAL ORDERS, REAL MONEY' if mode == 'live' else 'Groww prices, simulated fills'}")
+        print(f"  capital {cfg.get('capital'):,.0f}   risk/trade {100*cfg.get('risk.risk_per_trade'):.1f}%"
+              f"   max order {100*e.get('max_order_value_frac'):.0f}% of capital"
+              f"   canary qty {e.get('canary_qty') or 'off'}")
+        print(f"  state {state}   kill switch: touch {state}/KILL")
+        print("=" * 72)
+        if args.once:
+            ex.begin_session(clock.today())
+            fn = {"prep": ex.prep, "open": ex.open_session, "monitor": ex.monitor,
+                  "close": ex.close_session, "eod": ex.eod}[args.once]
+            fn()
+            return 0
+        daemon.run()
+        return 0
+    return 1
+
+
 # ------------------------------------------------------------------------ main
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -982,6 +1203,36 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--decay", action="store_true", help="run the edge-decay check")
     sp.add_argument("--top", type=int, default=8)
     sp.set_defaults(func=cmd_journal, champion=False)
+
+    sp = sub.add_parser("live", help="real-time execution (replay, shadow, live)")
+    lsub = sp.add_subparsers(dest="live_cmd", required=True)
+    r = lsub.add_parser("run", help="run the trading-day daemon")
+    r.add_argument("--mode", choices=["shadow", "live"], default="shadow",
+                   help="shadow: Groww prices, simulated fills (default). live: real orders")
+    r.add_argument("--once", choices=["prep", "open", "monitor", "close", "eod"],
+                   help="run one phase now and exit (bootstrapping, cron)")
+    for name, hlp in (("status", "show executor state"), ("kill", "stop all new orders"),
+                      ("resume", "lift the kill switch")):
+        x = lsub.add_parser(name, help=hlp)
+        x.add_argument("--mode", choices=["shadow", "live"], default="shadow")
+    f = lsub.add_parser("flatten", help="cancel stops and sell everything at market")
+    f.add_argument("--mode", choices=["shadow", "live"], default="shadow")
+    f.add_argument("--yes-sell-everything", action="store_true")
+    f.add_argument("--once", default=None, help=argparse.SUPPRESS)
+    pr = lsub.add_parser("probe", help="read-only check of every Groww endpoint")
+    pr.add_argument("--symbols", nargs="*")
+    rp = lsub.add_parser("replay", help="run the live executor over historical sessions")
+    common(rp)
+    rp.add_argument("--start", help="first session (default: the last --days sessions)")
+    rp.add_argument("--days", type=int, default=20)
+    rp.add_argument("--out", help="working directory for state and orders")
+    rp.add_argument("--quiet", action="store_true")
+    pa = lsub.add_parser("parity", help="live executor vs backtest over the same sessions")
+    common(pa)
+    pa.add_argument("--sessions", type=int, default=120)
+    pa.add_argument("--first", type=int, help="index of the first session")
+    pa.add_argument("--out")
+    sp.set_defaults(func=cmd_live, champion=False)
 
     sp = sub.add_parser("costs", help="what frictions cost at your size")
     sp.set_defaults(func=cmd_costs, champion=False)

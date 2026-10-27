@@ -69,6 +69,12 @@ until it is yes.
 
 ## The daily routine (after 15:30 IST)
 
+> **Running the real-time executor?** Then the routine below is automated —
+> the daemon fetches, validates, plans, places and protects on its own. See
+> [LIVE.md](LIVE.md); your daily job becomes reading alerts and
+> `swing live status`. What follows is the manual workflow, which still works
+> and is how you should start.
+
 ```bash
 swing fetch                        # incremental: only the bars since last time
 swing validate-data                # exits non-zero if anything is wrong

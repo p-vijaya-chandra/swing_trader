@@ -175,6 +175,45 @@
     }
   },
 
+  // ------------------------------------------------------------- EXECUTION
+  // The real-time layer. See docs/LIVE.md before changing "mode".
+  "execution": {
+    // "paper" simulates fills against real or replayed prices. "live" sends
+    // real orders - and ALSO requires SWING_LIVE_CONFIRM=yes in the
+    // environment. Two independent switches: no single typo goes live.
+    "mode": "paper",
+    "broker": "groww",
+    "stop_mode": "gtt",             // GTT lives at the broker: survives this process dying
+    "gtt_duration": "GTC",
+    "day_stop_fallback": true,      // same-day SL-M if a GTT is refused (e.g. unsettled T+0)
+    "schedule": {
+      "prep": "08:50", "open": "09:15:05", "open_deadline": "09:45",
+      "close": "15:31", "eod": "16:15", "eod_deadline": "23:00"
+    },
+    "poll_s": 30,
+    "phase_retry_s": 60,
+    "entry_timeout_s": 300,         // the backtest fills at the open or not at all
+    "entry_limit_buffer": 0.005,    // marketable limit: never a naked market buy
+    "exit_settle_s": 20,
+    "stop_grace_s": 90,             // give the broker's own stop time before the watchdog acts
+    "emergency_tolerance": 0.003,
+    "tick_size": 0.05,
+    "skip_symbols_with_foreign_holdings": true,  // never touch shares you hold yourself
+    // hard caps, independent of the strategy's own sizing
+    "max_order_value_frac": 0.30,
+    "max_orders_per_day": 20,
+    "max_daily_buy_frac": 0.80,
+    "max_price_deviation": 0.05,
+    "max_quote_age_s": 180,
+    "canary_qty": 0,                // set to 1 for the first live week: real orders, 1 share
+    "api_timeout_s": 10,
+    "api_retries": 3,
+    "api_min_interval_s": 0.15,
+    "ltp_symbol_separator": "_",    // confirm with `swing live probe` on your machine
+    "holiday_file": "config/nse_holidays.csv",
+    "notify_level": "warn"
+  },
+
   "data": {
     "cache_dir": "data_cache",
     "provider": "yfinance",

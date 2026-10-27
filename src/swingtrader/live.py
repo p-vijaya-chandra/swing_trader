@@ -1,13 +1,11 @@
 """Live operation: position book and the daily order plan.
 
-The output of this module is a sheet you work through in the Groww app after
-the close, before the next session. It is deliberately not an auto-trader:
-Groww's retail API access is not something to assume, and on a Rs 1L account
-the value of automation is small next to the cost of an unattended bug.
+Produces the plan for the next session: a sheet you can work through by hand
+in the Groww app, and the same plan, as JSON, that the real-time executor in
+`swingtrader.realtime` acts on automatically.
 
-What it does guarantee is that the orders it prints came out of the same rules
-the backtest validated - the exit logic is imported from `rules.py`, not
-reimplemented here.
+Either way the orders come out of the same rules the backtest validated - the
+exit logic is imported from `rules.py`, not reimplemented here.
 """
 from __future__ import annotations
 
@@ -40,6 +38,15 @@ class LivePosition:
     risk_per_share: float = 0.0
     entry_snapshot: Dict[str, float] = field(default_factory=dict)
     note: str = ""
+    # Broker-side protective stop, maintained by the automated executor. Blank
+    # for positions recorded by hand with `swing position add`.
+    stop_id: str = ""
+    stop_kind: str = ""
+    stop_ref: str = ""
+    stop_version: int = 0
+    entry_rank: int = 0
+    entry_score: float = 0.0
+    regime_at_entry: str = ""
 
 
 @dataclass
@@ -99,6 +106,10 @@ class OrderLine:
     detail: str = ""
     value: float = NA
     risk: float = NA
+    # Everything the executor needs to reproduce the backtest's fill logic at
+    # the open: the signal close (for the gap rule and to re-anchor the stop to
+    # the actual fill), and the entry snapshot the learning loop journals.
+    meta: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -334,7 +345,12 @@ class LivePlanner:
                 detail=(f"score {c.score:+.2f}, ATR {100*c.snapshot.get('atr_pct', 0):.1f}%, "
                         f"stop {100*(c.close-c.stop_ref)/c.close:.1f}% away; "
                         f"SKIP if it opens above {limit:,.2f}"),
-                value=c.close * qty, risk=risk_rs))
+                value=c.close * qty, risk=risk_rs,
+                meta={"signal_close": c.close, "stop_ref": c.stop_ref,
+                      "sector": c.sector, "setup": setup, "rank": c.rank,
+                      "score": c.score, "atr": c.atr,
+                      "snapshot": {k: v for k, v in c.snapshot.items()
+                                   if isinstance(v, (int, float)) and v == v}}))
             plan.orders.append(OrderLine(
                 action="PLACE_STOP", symbol=c.symbol, qty=qty, order_type="GTT-SL",
                 trigger=c.stop_ref, reason="initial stop",
@@ -460,6 +476,44 @@ def render_plan_markdown(plan: DailyPlan, cfg: Config, names: Dict[str, str],
              "(`swingtrader/rules.py`). Prices are from the close of "
              f"{plan.as_of}; treat every limit as a ceiling, not a target._")
     return "\n".join(L)
+
+
+def plan_to_json(plan: DailyPlan, path: str) -> None:
+    """Persist a plan so the next morning's executor can act on exactly what was
+    decided at last night's close - not on a re-computation that might see
+    different data."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+    def clean(v):
+        if isinstance(v, float) and v != v:
+            return None
+        if isinstance(v, dict):
+            return {k: clean(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [clean(x) for x in v]
+        return v
+
+    d = clean(asdict(plan))
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(d, fh, indent=1, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def plan_from_json(path: str) -> DailyPlan:
+    with open(path, "r", encoding="utf-8") as fh:
+        d = json.load(fh)
+
+    def num(v):
+        return NA if v is None else v
+
+    orders = []
+    for o in d.get("orders", []):
+        for k in ("price", "trigger", "value", "risk"):
+            o[k] = num(o.get(k))
+        orders.append(OrderLine(**o))
+    d["orders"] = orders
+    return DailyPlan(**d)
 
 
 def write_plan_csv(plan: DailyPlan, path: str) -> None:

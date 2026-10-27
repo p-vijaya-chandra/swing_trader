@@ -1,0 +1,37 @@
+# systemd unit for the swingtrader daemon.
+#
+#   sudo cp deploy/swingtrader.service /etc/systemd/system/
+#   sudo cp deploy/swingtrader.env.example /etc/swingtrader.env    # then edit it
+#   sudo chmod 600 /etc/swingtrader.env
+#   sudo systemctl daemon-reload && sudo systemctl enable --now swingtrader
+#   journalctl -u swingtrader -f
+#
+# Run it on a host whose static IP is whitelisted with Groww: since 1 April 2026
+# broker API orders from any other address are rejected.
+#
+# Start in SHADOW mode (the default below). Switch the ExecStart line to
+# `--mode live` only after the rollout steps in docs/LIVE.md.
+
+[Unit]
+Description=swingtrader real-time executor (Nifty 100 swing, Groww)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=swingtrader
+WorkingDirectory=/opt/swing_trader
+EnvironmentFile=/etc/swingtrader.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/swing_trader/swing live run --mode shadow
+# The daemon is restart-safe: completed phases are persisted and every order has
+# a deterministic reference, so a restart neither repeats the open nor
+# duplicates an order. Broker-side GTT stops protect positions while it is down.
+Restart=always
+RestartSec=20
+# SIGTERM lets it finish the current step and save state before exiting.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
