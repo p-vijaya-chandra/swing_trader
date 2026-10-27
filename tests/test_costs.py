@@ -59,3 +59,29 @@ def test_gst_applies_to_brokerage_not_to_stt(cfg):
     cb = cm.charges(100.0, 100, "BUY")
     expected_gst = (cb.brokerage + cb.exchange + cb.sebi) * cfg.get("costs.gst_pct")
     assert cb.gst == pytest.approx(expected_gst)
+
+
+def test_backtest_charges_slippage_exactly_once(cfg, dataset):
+    """Regression: the engine deducted cb.total - which carries slippage as a
+    line item - from fills that already had slippage applied, so every round
+    trip paid it twice (1.08% instead of 0.84% at a Rs 17k position).
+
+    Checked against the real engine: each trade's recorded costs must equal the
+    explicit charges on its two fills. Those fill prices already include
+    slippage, so any slippage inside `costs` is a second payment."""
+    from swingtrader.runtime import run_backtest
+    res = run_backtest(cfg, dataset, start="2016-01-01")
+    cm = CostModel(cfg)
+    checked = 0
+    for t in res.trades:
+        if t.exit_reason.startswith("scale"):
+            continue
+        explicit = (cm.charges(t.entry_price, t.qty, "BUY").total
+                    + cm.charges(t.exit_price, t.qty, "SELL").total)
+        assert t.costs == pytest.approx(explicit, rel=1e-6), (
+            f"{t.symbol} {t.entry_date}: booked {t.costs:.2f} but explicit charges "
+            f"are {explicit:.2f} - slippage is being paid again")
+        checked += 1
+    assert checked > 20
+    # the cost REPORT still shows slippage, once, as its own line
+    assert res.costs_breakdown.get("slippage", 0) > 0

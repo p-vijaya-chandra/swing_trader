@@ -82,3 +82,53 @@ def test_regime_labels_do_not_change(cfg, dataset, truncated):
         assert ra.at(d).label == rb.at(d).label, f"regime label changed on {d}"
         checked += 1
     assert checked > 100
+
+
+def _perturb_day_after_open(series, date, close_mult):
+    """Rewrite one session's close/high/low (never its open) to a new close.
+
+    Everything that happens after the opening auction on `date` changes; the
+    open itself does not. Bars stay internally coherent, otherwise the loader
+    would drop them and the test would measure something else entirely.
+    """
+    from swingtrader.data.models import Series
+    rows = [list(r) for r in series.to_rows()]
+    for r in rows:
+        if r[0] == date:
+            o = r[1]
+            c = r[4] * close_mult
+            r[4] = c
+            r[2] = max(o, c, r[2] if close_mult >= 1 else max(o, c))
+            r[3] = min(o, c, r[3] if close_mult <= 1 else min(o, c))
+    return Series.from_rows(series.symbol, rows)
+
+
+def test_opening_fills_cannot_see_that_days_close(cfg, dataset):
+    """Same-day causality. The truncation test above only catches data leaking
+    past the cut; it is blind to a decision at 09:15 reading the 15:30 close of
+    the SAME day, because both sit on the same side of any cut.
+
+    So: take sessions where the engine bought at the open, crash that session's
+    index and stock closes (open untouched), and re-run. Buys filled at that
+    open were decided before the close existed, so they must not change. A live
+    executor physically cannot see the close at 09:15 - a backtest that can is
+    measuring a strategy nobody is able to run.
+    """
+    base = run_backtest(cfg, dataset, start="2016-01-01")
+    buy_dates = sorted({t.entry_date for t in base.trades})
+    assert len(buy_dates) > 10, "fixture produced too few entries to test"
+
+    checked = 0
+    for d in buy_dates[3::max(1, len(buy_dates) // 6)][:5]:
+        series = {k: _perturb_day_after_open(v, d, 0.80) for k, v in dataset.series.items()}
+        index = _perturb_day_after_open(dataset.index, d, 0.80)
+        shocked = run_backtest(cfg, Dataset(series, index, dataset.sectors,
+                                            dataset.names, synthetic=True),
+                               start="2016-01-01")
+        before = sorted((t.symbol, t.qty) for t in base.trades if t.entry_date == d)
+        after = sorted((t.symbol, t.qty) for t in shocked.trades if t.entry_date == d)
+        assert before == after, (
+            f"buys filled at the open of {d} changed when only that day's CLOSE "
+            f"was altered: {before} -> {after}. The open is reading the close.")
+        checked += 1
+    assert checked >= 3

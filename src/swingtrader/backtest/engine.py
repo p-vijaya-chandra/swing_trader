@@ -130,6 +130,16 @@ class BacktestEngine:
             return NA
         return getattr(f.series, field_)[i]
 
+    @staticmethod
+    def _mark_last(positions: Dict[str, Position], last_price: Dict[str, float]) -> float:
+        """Value the book at the most recent CLOSE already seen.
+
+        This is what is knowable at the opening auction. Marking at today's
+        close instead - which `_mark(..., date)` does - is only legitimate once
+        the session is over.
+        """
+        return sum(p.qty * last_price.get(sym, p.entry_price) for sym, p in positions.items())
+
     def _mark(self, positions: Dict[str, Position], date: str,
               last_price: Dict[str, float]) -> float:
         total = 0.0
@@ -183,11 +193,20 @@ class BacktestEngine:
         days_since_resume = -1
 
         def book_costs(cb) -> float:
+            """Record every friction for the cost report, but return only the
+            explicit charges to deduct from cash.
+
+            Slippage is already inside the fill price - fill_price() moved it
+            against us - so deducting `cb.total` (which also carries slippage as
+            a line item) charged it twice: 1.08% per round trip instead of the
+            true 0.84% at a Rs 17k position. The report keeps the slippage line;
+            the cash ledger must not pay it again.
+            """
             for k, v in cb.as_dict().items():
                 if k == "total":
                     continue
                 cost_acc[k] = cost_acc.get(k, 0.0) + v
-            return cb.total
+            return cb.total - cb.slippage
 
         def close_position(p: Position, date: str, price: float, reason: str,
                            mae_r: float, mfe_r: float) -> None:
@@ -217,7 +236,16 @@ class BacktestEngine:
         mfe_track: Dict[str, float] = {}
 
         for t, date in enumerate(dates):
+            # Two regimes, and the distinction is the whole point:
+            #   regime      : classified from TODAY's close. Usable only after
+            #                 15:30 - for trailing stops and tomorrow's signals.
+            #   open_regime : yesterday's classification - all that is known at
+            #                 the 09:15 open, so it alone may cap opening buys.
+            # Using `regime` at the open let the backtest skip buys on days that
+            # went on to close risk-off: a same-day lookahead the truncation
+            # test cannot see, and that no live executor could ever reproduce.
             regime = self.regime_model.at(date)
+            open_regime = self.regime_model.at(dates[t - 1]) if t > 0 else regime
 
             # ---------------------------------------------------- 1. fills
             sells = [o for o in pending if o.side == "SELL"]
@@ -238,8 +266,8 @@ class BacktestEngine:
                 mfe_track.pop(o.symbol, None)
 
             drawdown = equity / peak_risk - 1.0 if peak_risk > 0 else 0.0
-            invested_now = self._mark(positions, date, last_price)
-            exposure_room = max(0.0, equity * regime.exposure - invested_now)
+            invested_now = self._mark_last(positions, last_price)
+            exposure_room = max(0.0, equity * open_regime.exposure - invested_now)
 
             for o in buys:
                 if o.symbol in positions:
@@ -286,7 +314,7 @@ class BacktestEngine:
                     lowest_low=self._price(o.symbol, date, "low"), costs_paid=c,
                     entry_rank=cand.rank if cand else 0,
                     entry_score=cand.score if cand else 0.0,
-                    regime_at_entry=regime.label,
+                    regime_at_entry=open_regime.label,
                     entry_snapshot=dict(cand.snapshot) if cand else {},
                     original_qty=qty)
                 positions[o.symbol] = p
